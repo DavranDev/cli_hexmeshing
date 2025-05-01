@@ -9,4 +9,5 @@ sudo docker run \
 -v $(pwd)/evocube:/space/evocube \
 -v $(pwd)/interactive-hex-meshing:/space/interactive-hex-meshing \
 -v $(pwd)/compile.sh:/space/compile.sh \
+-v $(pwd)/data:/space/data \
 docker-hexmesh

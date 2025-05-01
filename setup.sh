@@ -2,6 +2,7 @@
 wget https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip
 wget https://sdk.lunarg.com/sdk/download/1.3.268.0/linux/vulkansdk-linux-x86_64-1.3.268.0.tar.xz
 
+mkdir lib
 sudo apt install zip tar
 unzip libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
 mv libtorch lib/libtorch
