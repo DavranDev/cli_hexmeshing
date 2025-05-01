@@ -9,10 +9,6 @@ wget https://sdk.lunarg.com/sdk/download/1.3.268.0/linux/vulkansdk-linux-x86_64-
 tar -xvf vulkansdk-linux-x86_64-1.3.268.0.tar.xz
 mv 1.3.268.0 lib/vulkan-sdk-1.3.268.0
 
-# clone the code
-git clone --recursive https://github.com/LIHPC-Computational-Geometry/evocube.git
-git clone --recursive https://github.com/lingxiaoli94/interactive-hex-meshing.git
-
 # build the docker image
 sudo docker build -t docker-hexmesh .
 
