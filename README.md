@@ -36,19 +36,19 @@ git clone –recursive git@github.com:xmlyqing00/AutoHexMesh.git
 
 ### 2 Setup the host environment
 ```
-sh setup.sh
+bash setup.sh
 ```
 
 CUDA container Reference: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags 
 
 ### 3 Start the Docker container
 ```
-sh run_docker.sh
+bash run_docker.sh
 ```
 
 ### 4 Resume the container
 ```
-sh attach [container id]
+bash attach [container id]
 ```
 
 ## Run the code

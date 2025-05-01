@@ -1,4 +1,3 @@
-
 # build evocube
 cd /space/evocube
 mkdir build
