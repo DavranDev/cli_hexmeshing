@@ -1,9 +1,11 @@
-# Instructions on setting up the environment for EvoCube and Interactive-All-HexMesh
-Authors: lyq@tamu.edu, xinli@tamu.edu
+# Docker Environment for EvoCube and Interactive-All-HexMesh
+Instructions on setting up the environment for EvoCube and Interactive-All-HexMesh
+
+Authors: Yongqing Liang and Xin Li (Texas A&M University)
 
 ## NVIDIA-Docker
 
-### 1 Install Docker
+### 1 Install Docker Program
 ```
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
   && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
@@ -35,11 +37,12 @@ git clone –recursive git@github.com:xmlyqing00/AutoHexMesh.git
 ```
 
 ### 2 Setup the host environment and create a Docker image
+Our Docker image is based on the CUDA 12.4 container. It should be less or equal to the version of your host GPU driver version. If not, please check the CUDA container Reference to change the version of NVIDIA container and the LibTorch. 
+
+CUDA container Reference: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags 
 ```
 . ./setup.sh
 ```
-
-CUDA container Reference: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags 
 
 ### 3 Create a Docker container and start it
 ```
