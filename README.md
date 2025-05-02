@@ -34,14 +34,14 @@ sudo docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
 git clone –recursive git@github.com:xmlyqing00/AutoHexMesh.git
 ```
 
-### 2 Setup the host environment
+### 2 Setup the host environment and create a Docker image
 ```
 . ./setup.sh
 ```
 
 CUDA container Reference: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags 
 
-### 3 Start the Docker container
+### 3 Create a Docker container and start it
 ```
 . ./run_docker.sh
 ```
@@ -91,3 +91,14 @@ Follow the instructions of the pipeline to generate the hex mesh.
 2. `Decomposition` -> `Create anchors ...` -> `Reoptimization`
 3. `Discretization` -> `Discretize` -> `Finalize polycube`
 4. `Hexhedralization` -> `Init/Finalize hex mesh`
+
+## Clean the Docker environment
+Remove all containers
+```
+docker rm -f $(docker ps -aq)
+```
+Remove all images
+```
+docker rmi -f $(docker images -q)
+```
+
