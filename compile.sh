@@ -9,8 +9,7 @@ make -j all
 echo "export Torch_DIR='/space/lib/libtorch/share/cmake/Torch/'" >> /root/.bashrc
 source /root/.bashrc
 # enable libtorch first, then vulkan
-cd /space/lib/vulkan-sdk-1.3.268.0/
-source ./setup-env.sh
+source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh
 
 # build interactive-hex-meshing
 cd /space/interactive-hex-meshing

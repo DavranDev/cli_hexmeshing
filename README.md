@@ -51,6 +51,8 @@ In the host machine under the folder `AutoHexMesh`, run the following command to
 
 ### 3 Enter the Docker container
 
+A detailed document of the code structure and parameters can be found in the [Document](DOCUMENT.md).
+
 #### 3.1 Create a Docker container at the first time
 In the host machine under the folder `AutoHexMesh`,
 ```
