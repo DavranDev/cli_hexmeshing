@@ -124,6 +124,15 @@ Copyright (c) 2025 Yongqing Liang and Xin Li
 <summary>Citations</summary>
 
 ```
+@software{Liang_Docker_Environment_for_2025,
+    author = {Liang, Yongqing and Li, Xin},
+    month = may,
+    title = {{Docker Environment for EvoCube and Interactive-All-HexMesh}},
+    url = {https://github.com/xmlyqing00/AutoHexMesh},
+    version = {1.0},
+    year = {2025}
+}
+
 @article{dumery:evocube,
    title = {{Evocube: a Genetic Labeling Framework for Polycube-Maps}},
    author = {Dumery, Corentin and Protais, Fran{\c c}ois and Mestrallet, S{\'e}bastien and Bourcier, Christophe and Ledoux, Franck},

@@ -6,6 +6,6 @@ authors:
 - family-names: "Li"
   given-names: "Xin"
 title: "Docker Environment for EvoCube and Interactive-All-HexMesh"
-version: 0.0.1
+version: 1.0
 date-released: 2025-05-01
 url: "https://github.com/xmlyqing00/AutoHexMesh"
