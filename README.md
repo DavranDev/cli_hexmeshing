@@ -70,13 +70,13 @@ cd /space/evocube/build
 Or run the labeling module with GUI
 ```
 cd /space/evocube/build
-./evolabel /space/AutoHexMesh/data/examples/toy_plane.obj
+./evolabel /space/data/examples/toy_plane.obj
 ```
 
 ### 2 Convert the polycube to cubes (HDF5 format)
 ```python3
 cd /space/evocube/
-python3 build_hdf5.py --dir /space/AutoHexMesh/data/output/toy_plane
+python3 build_hdf5.py --dir /space/evocube/output/toy_plane
 ```
 
 ### 2 Run the interactive-hex-meshing
