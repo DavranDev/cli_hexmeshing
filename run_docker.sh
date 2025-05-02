@@ -10,4 +10,5 @@ sudo docker run \
 -v $(pwd)/interactive-hex-meshing:/space/interactive-hex-meshing \
 -v $(pwd)/compile.sh:/space/compile.sh \
 -v $(pwd)/data:/space/data \
+-v $(pwd)/output:/space/output \
 docker-hexmesh

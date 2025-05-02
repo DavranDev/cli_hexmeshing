@@ -17,3 +17,6 @@ sudo apt install vulkan-tools
 
 # enable GUI program
 xhost +local:root
+
+# create the output folder
+mkdir -p output
