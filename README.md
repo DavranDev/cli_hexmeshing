@@ -37,9 +37,18 @@ git clone –recursive git@github.com:xmlyqing00/AutoHexMesh.git
 ```
 
 ### 2 Setup the host environment and create a Docker image
-Our Docker image is based on the CUDA 12.4 container. It should be less or equal to the version of your host GPU driver version. If not, please check the CUDA container Reference to change the version of NVIDIA container and the LibTorch. 
 
-CUDA container Reference: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags 
+Our Docker image is based on the **CUDA 12.4** container. It should be less or equal to the version of your host GPU driver version. If not, please check the CUDA container Reference to change the version of NVIDIA container and the LibTorch. 
+<details>
+<summary>Key Library Versions and References</summary>
+
+- Docker Image based on CUDA 12.4: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags 
+- LibTorch 2.6.0: https://pytorch.org/get-started/locally/ 
+- Vulkan-SDK 1.3.268.0: https://vulkan.lunarg.com/sdk/home#linux
+
+</details>
+
+
 ```
 . ./setup.sh
 ```
