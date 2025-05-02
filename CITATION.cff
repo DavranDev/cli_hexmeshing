@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Liang"
+  given-names: "Yongqing"
+- family-names: "Li"
+  given-names: "Xin"
+title: "Docker Environment for EvoCube and Interactive-All-HexMesh"
+version: 0.0.1
+date-released: 2025-05-01
+url: "https://github.com/xmlyqing00/AutoHexMesh"

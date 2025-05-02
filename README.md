@@ -119,3 +119,34 @@ docker rmi -f $(docker images -q)
 ## Copyright
 
 Copyright (c) 2025 Yongqing Liang and Xin Li
+
+<details>
+<summary>Citations</summary>
+
+```
+@article{dumery:evocube,
+   title = {{Evocube: a Genetic Labeling Framework for Polycube-Maps}},
+   author = {Dumery, Corentin and Protais, Fran{\c c}ois and Mestrallet, S{\'e}bastien and Bourcier, Christophe and Ledoux, Franck},
+   url = {https://doi.org/10.1111/cgf.14649},
+   journal = {{Computer Graphics Forum}},
+   publisher = {{Wiley}},
+   year = {2022},
+   month = Aug,
+   doi = {10.1111/cgf.14649},
+   volume = {41},
+   number = {6},
+   pages = {467--479},
+} 
+
+@article{li2021interactive,
+  title={Interactive all-hex meshing via cuboid decomposition},
+  author={Li, Lingxiao and Zhang, Paul and Smirnov, Dmitriy and Abulnaga, S Mazdak and Solomon, Justin},
+  journal={ACM Transactions on Graphics (TOG)},
+  volume={40},
+  number={6},
+  pages={1--17},
+  year={2021},
+  publisher={ACM New York, NY, USA}
+}
+```
+</details>
