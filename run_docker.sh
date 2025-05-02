@@ -1,4 +1,8 @@
+# enable GUI program
+xhost +local:root
+
 sudo docker run \
+--runtime=nvidia \
 --gpus all \
 -it \
 --env="DISPLAY=$DISPLAY" \

@@ -3,37 +3,33 @@ Instructions on setting up the environment for EvoCube and Interactive-All-HexMe
 
 Authors: Yongqing Liang and Xin Li (Texas A&M University)
 
-## NVIDIA-Docker
+## Basic Docker Program and NVIDIA Support
+
+The following instructions are based on the Ubuntu 24.04 LTS. And the cuda driver is installed. A valid GitHub account with git is required.
 
 ### 1 Install Docker Program
 ```
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
-  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-	sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-	sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+. ./install_docker.sh
 ```
-```
-sed -i -e '/experimental/ s/^#//g' /etc/apt/sources.list.d/nvidia-container-toolkit.list
-sudo apt-get update
-sudo apt-get install -y nvidia-container-toolkit
-```
-Reference: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+<details>
+<summary>References</summary>
 
-### 2 Configuration
-```
-sudo nvidia-ctk runtime configure --runtime=docker
-sudo systemctl restart docker
-```
+- https://docs.docker.com/engine/install/ubuntu/
+- https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
 
-### 3 Test Docker (Optional)
+</details>
+
+### 2 Test Docker (Optional)
 ```
 sudo docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
 ```
+It should show the GPU information in nvidia-smi.
 
 ## Build the environment
 ### 1 Clone the repository
 ```
-git clone –recursive git@github.com:xmlyqing00/AutoHexMesh.git
+git clone --recursive git@github.com:xmlyqing00/AutoHexMesh.git
+cd AutoHexMesh
 ```
 
 ### 2 Setup the host environment and create a Docker image
@@ -48,30 +44,34 @@ Our Docker image is based on the **CUDA 12.4** container. It should be less or e
 
 </details>
 
-In the host machine
+In the host machine under the folder `AutoHexMesh`, run the following command to build the Docker image.
 ```
 . ./setup.sh
 ```
 
-### 3 Create a Docker container and start it
-In the host machine
+### 3 Enter the Docker container
+
+#### 3.1 Create a Docker container at the first time
+In the host machine under the folder `AutoHexMesh`,
 ```
 . ./run_docker.sh
 ```
+Note: `source` is the bash command feature. Using `. ./compile.sh` is more general.
+#### 3.2 Resume the container after the first time
+In the host machine, you can attach to the container by the following command.
+```
+sudo docker container list -a
+xhost +local:root
+sudo docker start [container id]
+sudo docker attach [container id]
+```
 
-### 4 Compile the code
-In the Docker container
+### 4 Compile the code every time you enter the container
+In the Docker container under the folder `/space`,
 ```
 . ./compile.sh
 ```
-Note: `source` is the bash command feature. Using `. ./compile.sh` is more general.
 
-### 5 Resume the container
-In the host machine
-```
-sudo docker container list -a
-sudo docker attach [container id]
-```
 
 ## Run the code
 
@@ -114,11 +114,11 @@ Step by step visualization:
 ## Clean the Docker environment
 In the host machine, remove all containers
 ```
-docker rm -f $(docker ps -aq)
+sudo docker rm -f $(sudo docker ps -aq)
 ```
 In the host machine, remove all images
 ```
-docker rmi -f $(docker images -q)
+sudo docker rmi -f $(sudo docker images -q)
 ```
 
 ## Copyright
