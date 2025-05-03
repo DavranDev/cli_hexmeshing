@@ -3,7 +3,7 @@ cd /space/evocube
 mkdir build
 cd build
 cmake ..
-make -j all
+make -j8 all
 
 # link vulkan sdk and libtorch
 echo "export Torch_DIR='/space/lib/libtorch/share/cmake/Torch/'" >> /root/.bashrc
@@ -16,7 +16,7 @@ cd /space/interactive-hex-meshing
 mkdir -p build/Release
 cd build/Release
 cmake ../.. -DCMAKE_BUILD_TYPE=Release
-make -j all
+make -j8 all
 
 # the container
 cd /space
