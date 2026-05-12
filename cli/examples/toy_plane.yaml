@@ -1,0 +1,37 @@
+# Worked example: end-to-end Stages 2+3 on the bundled toy_plane model.
+#
+# Prerequisite: a polycube has already been built for toy_plane and saved as
+# an HDF5 (e.g. via evocube + build_hdf5.py, or the GUI). The expected file
+# is /space/output/examples/toy_plane/evocube.hdf5 inside the container.
+#
+# To run:
+#   ./cli/run.sh full output/examples/toy_plane/evocube.hdf5 cli/examples/toy_plane.yaml
+#
+# Note: this file is *not* substituted by run.sh; paths here are absolute in
+# the container's filesystem and should match what run.sh would have produced.
+# Use this only when you want to call hex --script directly without run.sh.
+
+input:
+  type: hdf5
+  path: /space/output/examples/toy_plane/evocube.hdf5
+
+stages:
+  - discretization:
+      hex_size: 0.05
+      round_to_nearest: false
+      padding: true
+
+  - hexahedralization:
+      inversion_free: true
+      projection_weight: 1.0
+      hausdorff_weight: 1.0
+      fairness_weight: 0.0
+      smoothness_weight: 1.0
+      learning_rate: 1.0e-4
+      steps: 100
+
+output:
+  run_dir: /space/output/runs/toy_plane/full_manual
+  export_mesh: result.mesh
+
+keep_window_open: true

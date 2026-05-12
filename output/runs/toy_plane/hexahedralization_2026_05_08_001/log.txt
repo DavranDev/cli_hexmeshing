@@ -1,0 +1,43 @@
+
+==========
+== CUDA ==
+==========
+
+CUDA Version 12.4.1
+
+Container image Copyright (c) 2016-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+By pulling and using the container, you accept the terms and conditions of this license:
+https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+
+A copy of this license is made available in this container at /NGC-DL-CONTAINER-LICENSE for your convenience.
+
+[2026-05-08 16:36:46.307] [info] workspace path: /space/interactive-hex-meshing/bin/Release
+[2026-05-08 16:36:46.904] [info] Preferred MSAA sample count: 4
+[2026-05-08 16:36:47.006] [info] [script] loading input (hdf5): /space/output/runs/toy_plane/hexahedralization_2026_05_08_001/input.hdf5
+[2026-05-08 16:36:47.045] [info] Surface mesh with 7651 vertices and 15298 surfaces extracted from the tet mesh.
+[2026-05-08 16:36:47.049] [info] Finish updating tri surface view...
+[2026-05-08 16:36:47.076] [info] Surface mesh with 7651 vertices and 15298 surfaces extracted from the tet mesh.
+[2026-05-08 16:36:47.080] [info] Finish updating tri surface view...
+[2026-05-08 16:36:47.081] [info] [script] run_dir: /space/output/runs/toy_plane/hexahedralization_2026_05_08_001
+[2026-05-08 16:36:47.082] [info] [script] === running stage 3 (hexahedralization) ===
+[2026-05-08 16:36:47.082] [info] [script] hexahedralization: inversion_free=true, projection=1, hausdorff=1, fairness=0, smoothness=1, lr=0.0001, steps=100
+[W508 16:36:47.642980620 Cross.cpp:62] Warning: Using torch.cross without specifying the dim arg is deprecated.
+Please either pass the dim explicitly or simply use torch.linalg.cross.
+The default value of dim will change to agree with that of linalg.cross in a future release. (function operator())
+[2026-05-08 16:36:47.280] [info] Before hex deform: 
+[2026-05-08 16:36:47.281] [info] distortion_loss: 4.8390713  | proj_loss : 25.84378 | fairness_loss: 0 | smoothness_loss: 1.4781663 |custom_loss: 0
+[2026-05-08 16:36:47.597] [info] Took 0.315985862 sec(s). After hex deform: 
+[2026-05-08 16:36:47.597] [info] distortion_loss: 2.103664  | proj_loss : 4.5414963 | fairness_loss: 0 | smoothness_loss: 0.69806147 |custom_loss: 0
+[2026-05-08 16:36:48.010] [info] Before hex deform: 
+[2026-05-08 16:36:48.010] [info] distortion_loss: 2.1036468  | proj_loss : 5.6304135 | fairness_loss: 0 | smoothness_loss: 0.69806147 |custom_loss: 0
+[2026-05-08 16:36:48.317] [info] Took 0.306966284 sec(s). After hex deform: 
+[2026-05-08 16:36:48.317] [info] distortion_loss: 2.3302524  | proj_loss : 1.3167893 | fairness_loss: 0 | smoothness_loss: 0.43191358 |custom_loss: 0
+[2026-05-08 16:36:48.421] [info] Before hex deform: 
+[2026-05-08 16:36:48.421] [info] distortion_loss: 2.3302524  | proj_loss : 3.1767316 | fairness_loss: 0 | smoothness_loss: 0.43191355 |custom_loss: 0
+[2026-05-08 16:36:48.706] [info] Took 0.284879827 sec(s). After hex deform: 
+[2026-05-08 16:36:48.706] [info] distortion_loss: 2.2387705  | proj_loss : 2.2713819 | fairness_loss: 0 | smoothness_loss: 0.45620936 |custom_loss: 0
+[2026-05-08 16:36:48.759] [info] [script] saving /space/output/runs/toy_plane/hexahedralization_2026_05_08_001/stage_3_hexahedralization.hdf5
+[2026-05-08 16:36:48.761] [info] [script] exporting final hex mesh to /space/output/runs/toy_plane/hexahedralization_2026_05_08_001/result.mesh
+[2026-05-08 16:36:48.763] [info] [script] done.

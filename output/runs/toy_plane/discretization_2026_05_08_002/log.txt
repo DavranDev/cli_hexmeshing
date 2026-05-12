@@ -1,0 +1,36 @@
+
+==========
+== CUDA ==
+==========
+
+CUDA Version 12.4.1
+
+Container image Copyright (c) 2016-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+By pulling and using the container, you accept the terms and conditions of this license:
+https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+
+A copy of this license is made available in this container at /NGC-DL-CONTAINER-LICENSE for your convenience.
+
+[2026-05-08 21:10:23.572] [info] workspace path: /space/interactive-hex-meshing/bin/Release
+[2026-05-08 21:10:24.470] [info] Preferred MSAA sample count: 4
+[2026-05-08 21:10:24.580] [info] [script] loading input (hdf5): /space/output/runs/toy_plane/discretization_2026_05_08_002/input.hdf5
+[2026-05-08 21:10:24.617] [info] Surface mesh with 7651 vertices and 15298 surfaces extracted from the tet mesh.
+[2026-05-08 21:10:24.621] [info] Finish updating tri surface view...
+[2026-05-08 21:10:24.648] [info] Surface mesh with 7651 vertices and 15298 surfaces extracted from the tet mesh.
+[2026-05-08 21:10:24.652] [info] Finish updating tri surface view...
+[2026-05-08 21:10:24.652] [info] [script] run_dir: /space/output/runs/toy_plane/discretization_2026_05_08_002
+[2026-05-08 21:10:24.652] [info] [script] === running stage 2 (discretization) ===
+[2026-05-08 21:10:24.652] [info] [script] discretization: hex_size=0.05, round_to_nearest=false, padding=true
+[2026-05-08 21:10:24.655] [info] Generate a hex complex with 4608 vertices, 1734 quads, 30 patches, and 5385 hexes.
+[2026-05-08 21:10:24.664] [info] [script] saving /space/output/runs/toy_plane/discretization_2026_05_08_002/stage_2_discretization.hdf5
+[2026-05-08 21:10:24.666] [info] [script] done.
+[2026-05-08 21:10:47.668] [info] Surface mesh with 7651 vertices and 15298 surfaces extracted from the tet mesh.
+[2026-05-08 21:10:47.672] [info] Finish updating tri surface view...
+[2026-05-08 21:10:47.699] [info] Surface mesh with 7651 vertices and 15298 surfaces extracted from the tet mesh.
+[2026-05-08 21:10:47.703] [info] Finish updating tri surface view...
+[2026-05-08 21:11:26.910] [info] Surface mesh with 7651 vertices and 15298 surfaces extracted from the tet mesh.
+[2026-05-08 21:11:26.914] [info] Finish updating tri surface view...
+[2026-05-08 21:11:26.945] [info] Surface mesh with 7651 vertices and 15298 surfaces extracted from the tet mesh.
+[2026-05-08 21:11:26.949] [info] Finish updating tri surface view...

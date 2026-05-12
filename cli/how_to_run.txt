@@ -1,0 +1,207 @@
+================================================================================
+HOW TO RUN — interactive-hex-meshing CLI (Step 1: Stages 2 + 3)
+================================================================================
+
+Three subcommands are available:
+
+    ./cli/run.sh discretize     <input.hdf5>  [config.yaml]  [--exit-after]
+    ./cli/run.sh hexahedralize  <input.hdf5>  [config.yaml]  [--exit-after]
+    ./cli/run.sh full           <input.hdf5>  [config.yaml]  [--exit-after]
+
+If [config.yaml] is omitted, the defaults at cli/configs/stage_<cmd>.yaml are
+used. To run with custom parameters, copy one of those YAMLs, edit the values,
+and pass your file as the 3rd argument. The script substitutes the input path
+and output run-directory automatically — you only set the parameter values.
+
+The placeholders __INPUT_PATH__ and __RUN_DIR__ MUST stay in your YAML; run.sh
+fills them in. Don't replace them with hard-coded paths.
+
+Outputs land under: output/runs/<example>/<stage>_<YYYY_MM_DD>_<NNN>/
+    input.hdf5
+    stage_2_discretization.hdf5      (if Stage 2 ran)
+    stage_3_hexahedralization.hdf5   (if Stage 3 ran)
+    result.mesh                      (if Stage 3 ran, MEDIT format)
+    run_config.yaml                  (the exact config used)
+    log.txt                          (combined stdout + stderr)
+
+  <example> is auto-derived from the input filename (e.g. toy_plane.hdf5 ->
+  "toy_plane"). When you chain stages by feeding a stage_N_*.hdf5 back in,
+  the example name is taken from the enclosing folder so all related runs
+  land together under output/runs/<example>/.
+
+  <stage> is "discretization", "hexahedralization", or "full".
+
+
+================================================================================
+1. DISCRETIZE — Pipeline Stage 2 (polycube  ->  hex complex)
+================================================================================
+
+Input must be an HDF5 with a polycube (post-decomposition).
+
+------- WITHOUT params (uses defaults from cli/configs/stage_discretization.yaml)
+    ./cli/run.sh discretize output/examples/toy_plane/evocube.hdf5
+    ./cli/run.sh discretize output/examples/toy_plane/evocube.hdf5 --exit-after
+
+------- WITH max params (custom YAML)
+First, copy the default and edit:
+    cp cli/configs/stage_discretization.yaml my_discretize.yaml
+    # then edit my_discretize.yaml to look like:
+
+    input:
+      type: hdf5
+      path: __INPUT_PATH__
+
+    stages:
+      - discretization:
+          hex_size: 0.04            # smaller -> more hexes, more memory
+          round_to_nearest: true    # snap cuboid bounds to integer grid
+          padding: false            # skip the global padding layer
+
+    output:
+      run_dir: __RUN_DIR__
+
+    keep_window_open: true
+
+Then run it:
+    ./cli/run.sh discretize output/examples/toy_plane/evocube.hdf5 my_discretize.yaml
+
+Discretization parameters (all optional; defaults shown in parentheses):
+    hex_size           (0.05)   edge length of one hex element
+    round_to_nearest   (false)  snap cuboid bounds to integer grid
+    padding            (true)   add a global padding layer of hexes
+
+
+================================================================================
+2. HEXAHEDRALIZE — Pipeline Stage 3 (hex complex  ->  final hex mesh)
+================================================================================
+
+Input must be an HDF5 with a polycube_complex (post-discretization).
+Produces stage_3_hexahedralization.hdf5 and result.mesh.
+
+------- WITHOUT params
+    ./cli/run.sh hexahedralize output/runs/<example>/discretization_<date>_<NNN>/stage_2_discretization.hdf5
+    ./cli/run.sh hexahedralize output/runs/<example>/discretization_<date>_<NNN>/stage_2_discretization.hdf5 --exit-after
+
+Tip: To grab the most recent discretization run automatically:
+    LATEST=$(ls -dt output/runs/<example>/discretization_*/ | head -1)
+    ./cli/run.sh hexahedralize "${LATEST}stage_2_discretization.hdf5"
+
+------- WITH max params (custom YAML)
+    cp cli/configs/stage_hexahedralization.yaml my_hex.yaml
+    # then edit my_hex.yaml to look like:
+
+    input:
+      type: hdf5
+      path: __INPUT_PATH__
+
+    stages:
+      - hexahedralization:
+          inversion_free: true       # smooth-deformation init (200 internal steps)
+          projection_weight: 1.0     # pull boundary verts toward input surface
+          hausdorff_weight: 1.0      # reduce worst-case surface distance
+          fairness_weight: 0.0       # Laplacian smoothness on boundary
+          smoothness_weight: 1.0     # normal smoothness
+          learning_rate: 1.0e-4      # Adam optimizer learning rate
+          steps: 200                 # extra optimization steps after init
+
+    output:
+      run_dir: __RUN_DIR__
+      export_mesh: result.mesh       # filename relative to run_dir
+
+    keep_window_open: true
+
+Then run it:
+    ./cli/run.sh hexahedralize output/runs/<example>/discretization_<date>_<NNN>/stage_2_discretization.hdf5 my_hex.yaml
+
+Hexahedralization parameters (all optional; defaults shown in parentheses):
+    inversion_free      (true)    use smooth-deformation init (200 internal steps)
+    projection_weight   (1.0)     pull boundary verts toward input surface
+    hausdorff_weight    (1.0)     reduce worst-case surface distance
+    fairness_weight     (0.0)     Laplacian smoothness on boundary
+    smoothness_weight   (1.0)     normal smoothness
+    learning_rate       (1e-4)    Adam optimizer learning rate
+    steps               (100)     additional optimization steps after init
+
+
+================================================================================
+3. FULL — Stages 2 + 3 chained in one run
+================================================================================
+
+Input must be an HDF5 with a polycube (post-decomposition). Both stages run
+in the same run directory, and you get all intermediate files:
+stage_2_discretization.hdf5, stage_3_hexahedralization.hdf5, result.mesh.
+
+------- WITHOUT params
+    ./cli/run.sh full output/examples/toy_plane/evocube.hdf5
+    ./cli/run.sh full output/examples/toy_plane/evocube.hdf5 --exit-after
+
+------- WITH max params (custom YAML)
+    cp cli/configs/full_pipeline.yaml my_full.yaml
+    # then edit my_full.yaml to look like:
+
+    input:
+      type: hdf5
+      path: __INPUT_PATH__
+
+    stages:
+      - discretization:
+          hex_size: 0.04
+          round_to_nearest: true
+          padding: false
+
+      - hexahedralization:
+          inversion_free: true
+          projection_weight: 2.0
+          hausdorff_weight: 1.5
+          fairness_weight: 0.1
+          smoothness_weight: 1.0
+          learning_rate: 5.0e-5
+          steps: 300
+
+    output:
+      run_dir: __RUN_DIR__
+      export_mesh: result.mesh
+
+    keep_window_open: true
+
+Then run it:
+    ./cli/run.sh full output/examples/toy_plane/evocube.hdf5 my_full.yaml
+
+
+================================================================================
+COMMON OPTIONS
+================================================================================
+
+--exit-after        Close the GUI window automatically when the script
+                    finishes. Use this for batch jobs and headless-ish runs.
+                    Without it, the window stays open for visual inspection
+                    until you close it manually.
+
+To override the default parameters globally (so future runs use your tweaks
+without naming a custom YAML each time), edit the templates in cli/configs/
+directly. The placeholders __INPUT_PATH__ and __RUN_DIR__ must remain.
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+"[script] discretization requires a polycube"
+    Your input HDF5 doesn't have a polycube yet. Run decomposition in the GUI
+    first and save the project, then use that HDF5 as input.
+
+"[script] hexahedralization requires polycube_complex + ..."
+    Your input HDF5 is missing one of polycube_complex, deformed_volume_mesh,
+    or target_volume_mesh. Use a Stage-2 (or later) HDF5.
+
+"Cannot open display" / Vulkan ICD error
+    Same issue as the GUI launcher. Confirm ./run_docker.sh works first.
+    The wrapper already sets VK_ICD_FILENAMES to NVIDIA-only and runs
+    xhost +local:root on each invocation.
+
+Build error after pulling these CLI changes
+    Rebuild the hex binary inside the container:
+        ./run_docker.sh
+        # inside container:
+        . /space/compile.sh
+        exit

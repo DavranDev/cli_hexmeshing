@@ -1,13 +1,12 @@
 # build evocube
 cd /space/evocube
-mkdir build
+mkdir -p build
 cd build
 cmake ..
 make -j8 all
 
 # link vulkan sdk and libtorch
-echo "export Torch_DIR='/space/lib/libtorch/share/cmake/Torch/'" >> /root/.bashrc
-source /root/.bashrc
+export Torch_DIR='/space/lib/libtorch/share/cmake/Torch/'
 # enable libtorch first, then vulkan
 source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh
 
@@ -15,7 +14,7 @@ source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh
 cd /space/interactive-hex-meshing
 mkdir -p build/Release
 cd build/Release
-cmake ../.. -DCMAKE_BUILD_TYPE=Release
+cmake ../.. -DCMAKE_BUILD_TYPE=Release -DTorch_DIR="$Torch_DIR"
 make -j8 all
 
 # the container

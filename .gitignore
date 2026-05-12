@@ -2,3 +2,8 @@
 *.zip
 
 .vscode/
+.claude/
+.codex
+
+lib/
+1.4.341.1/

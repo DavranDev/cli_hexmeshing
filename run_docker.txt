@@ -1,0 +1,22 @@
+cd /home/buddy/Documents/AutoHexMesh
+
+xhost +local:root
+
+docker run \
+  --runtime=nvidia \
+  --gpus all \
+  --rm \
+  --name hexmesh-gui \
+  --env="DISPLAY=$DISPLAY" \
+  --env="NVIDIA_DRIVER_CAPABILITIES=all" \
+  --env="VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json" \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+  -v /usr/share/vulkan:/usr/share/vulkan:ro \
+  -v $(pwd)/lib:/space/lib \
+  -v $(pwd)/evocube:/space/evocube \
+  -v $(pwd)/interactive-hex-meshing:/space/interactive-hex-meshing \
+  -v $(pwd)/compile.sh:/space/compile.sh \
+  -v $(pwd)/data:/space/data \
+  -v $(pwd)/output:/space/output \
+  docker-hexmesh \
+  bash -c "source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh && cd /space/interactive-hex-meshing/bin/Release && ./hex"

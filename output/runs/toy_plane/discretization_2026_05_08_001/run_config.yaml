@@ -1,0 +1,21 @@
+# Discretization-only run (Pipeline Stage 2).
+#
+# Input HDF5 must already contain a polycube (post-decomposition state).
+# Produces stage_2_discretization.hdf5 in the run directory.
+#
+# Placeholders /space/output/runs/toy_plane/discretization_2026_05_08_001/input.hdf5 and /space/output/runs/toy_plane/discretization_2026_05_08_001 are substituted by cli/run.sh.
+
+input:
+  type: hdf5
+  path: /space/output/runs/toy_plane/discretization_2026_05_08_001/input.hdf5
+
+stages:
+  - discretization:
+      hex_size: 0.05            # edge length of one hex element
+      round_to_nearest: false   # snap cuboid bounds to integer grid (vs expand)
+      padding: true             # add an extra layer of hexes globally
+
+output:
+  run_dir: /space/output/runs/toy_plane/discretization_2026_05_08_001
+
+keep_window_open: true
