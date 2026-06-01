@@ -1,51 +1,129 @@
 ================================================================================
-HOW TO RUN — interactive-hex-meshing CLI (Step 1: Stages 2 + 3)
+HOW TO RUN — interactive-hex-meshing CLI (all four pipeline stages)
 ================================================================================
 
-Three subcommands are available:
+Four subcommands are available, one per pipeline stage:
 
-    ./cli/run.sh discretize     <input.hdf5>  [config.yaml]  [--exit-after]
-    ./cli/run.sh hexahedralize  <input.hdf5>  [config.yaml]  [--exit-after]
-    ./cli/run.sh full           <input.hdf5>  [config.yaml]  [--exit-after]
+    ./cli/run.sh deform         <input.mesh|input.hdf5>  [config.yaml]  [--exit-after]
+    ./cli/run.sh decompose      <input.hdf5>             [config.yaml]  [--exit-after]
+    ./cli/run.sh discretize     <input.hdf5>             [config.yaml]  [--exit-after]
+    ./cli/run.sh hexahedralize  <input.hdf5>             [config.yaml]  [--exit-after]
+
+There is no "full" subcommand. To run the whole pipeline, run the stages in
+order and feed each stage_N_*.hdf5 into the next (see "FULL CHAIN" below).
 
 If [config.yaml] is omitted, the defaults at cli/configs/stage_<cmd>.yaml are
 used. To run with custom parameters, copy one of those YAMLs, edit the values,
 and pass your file as the 3rd argument. The script substitutes the input path
 and output run-directory automatically — you only set the parameter values.
 
-The placeholders __INPUT_PATH__ and __RUN_DIR__ MUST stay in your YAML; run.sh
-fills them in. Don't replace them with hard-coded paths.
+The placeholders __INPUT_PATH__ and __RUN_DIR__ (and __INPUT_TYPE__ for deform)
+MUST stay in your YAML; run.sh fills them in. Don't hard-code paths.
 
 Outputs land under: output/runs/<example>/<stage>_<YYYY_MM_DD>_<NNN>/
-    input.hdf5
+    input.hdf5  (or input.mesh)
+    stage_0_deformation.hdf5         (if Stage 0 ran)
+    stage_1_decomposition.hdf5       (if Stage 1 ran)
     stage_2_discretization.hdf5      (if Stage 2 ran)
     stage_3_hexahedralization.hdf5   (if Stage 3 ran)
     result.mesh                      (if Stage 3 ran, MEDIT format)
+    result_metrics.yaml              (if Stage 3 ran + export_metrics set)
     run_config.yaml                  (the exact config used)
     log.txt                          (combined stdout + stderr)
 
-  <example> is auto-derived from the input filename (e.g. toy_plane.hdf5 ->
+  <example> is auto-derived from the input filename (e.g. toy_plane.mesh ->
   "toy_plane"). When you chain stages by feeding a stage_N_*.hdf5 back in,
   the example name is taken from the enclosing folder so all related runs
   land together under output/runs/<example>/.
 
-  <stage> is "discretization", "hexahedralization", or "full".
+  <stage> is "deformation", "decomposition", "discretization", or
+  "hexahedralization".
 
 
 ================================================================================
-1. DISCRETIZE — Pipeline Stage 2 (polycube  ->  hex complex)
+1. DEFORM — Pipeline Stage 0 (tet mesh -> cube-like deformed mesh)
+================================================================================
+
+Input may be a raw tet mesh (.mesh / .vtk) OR an HDF5 with a target_volume_mesh.
+This is the only subcommand that accepts a non-HDF5 input; the type is detected
+from the file extension. Produces stage_0_deformation.hdf5.
+
+------- WITHOUT params (defaults from cli/configs/stage_deformation.yaml)
+    ./cli/run.sh deform output/input_examples/stage_0_deformation/toy_plane.mesh
+    ./cli/run.sh deform output/input_examples/stage_0_deformation/toy_plane.mesh --exit-after
+
+------- WITH params (custom YAML)
+    cp cli/configs/stage_deformation.yaml my_deform.yaml
+    # edit, keeping the placeholders:
+
+    input:
+      type: __INPUT_TYPE__       # filled in by run.sh (mesh or hdf5)
+      path: __INPUT_PATH__
+
+    stages:
+      - deformation:
+          cubeness_weight: 1.0     # push surface normals toward axis-aligned
+          smoothness_weight: 1.0   # penalize disagreeing adjacent normals
+          conformal_weight: 1.0    # distortion: angle preserving
+          authalic_weight: 1.0     # distortion: area preserving
+          learning_rate: 1.0e-3    # Adam
+          steps: 100               # optimization steps
+
+    output:
+      run_dir: __RUN_DIR__
+
+    keep_window_open: true
+
+
+================================================================================
+2. DECOMPOSE — Pipeline Stage 1 (deformed mesh -> polycube)
+================================================================================
+
+Input must be an HDF5 with a deformed_volume_mesh (a Stage-0 output, or an HDF5
+that already has deformation done). Produces stage_1_decomposition.hdf5
+containing the optimized polycube (cuboid list + polycube_info).
+
+------- WITHOUT params (defaults from cli/configs/stage_decomposition.yaml)
+    ./cli/run.sh decompose output/runs/<example>/deformation_<date>_<NNN>/stage_0_deformation.hdf5
+
+Tip: grab the most recent deformation run automatically:
+    LATEST=$(ls -dt output/runs/<example>/deformation_*/ | head -1)
+    ./cli/run.sh decompose "${LATEST}stage_0_deformation.hdf5"
+
+------- WITH params (custom YAML)
+    cp cli/configs/stage_decomposition.yaml my_decompose.yaml
+    # edit, keeping the placeholders:
+
+    input:
+      type: hdf5
+      path: __INPUT_PATH__
+
+    stages:
+      - decomposition:
+          num_cuboids: 8            # how many cuboids to greedily add
+          suggest_strategy: largest # "largest" or "simple"
+          reopt_steps: 1000         # optimizer steps refining the cuboids
+          # anchor sampling + optimizer knobs (grid_size, surface_samples,
+          # learning_rate, ...) are also accepted; see the template comments.
+
+    output:
+      run_dir: __RUN_DIR__
+
+    keep_window_open: true
+
+
+================================================================================
+3. DISCRETIZE — Pipeline Stage 2 (polycube -> hex complex)
 ================================================================================
 
 Input must be an HDF5 with a polycube (post-decomposition).
 
-------- WITHOUT params (uses defaults from cli/configs/stage_discretization.yaml)
-    ./cli/run.sh discretize output/examples/toy_plane/evocube.hdf5
-    ./cli/run.sh discretize output/examples/toy_plane/evocube.hdf5 --exit-after
+------- WITHOUT params (defaults from cli/configs/stage_discretization.yaml)
+    ./cli/run.sh discretize output/runs/<example>/decomposition_<date>_<NNN>/stage_1_decomposition.hdf5
 
-------- WITH max params (custom YAML)
-First, copy the default and edit:
+------- WITH params (custom YAML)
     cp cli/configs/stage_discretization.yaml my_discretize.yaml
-    # then edit my_discretize.yaml to look like:
+    # edit:
 
     input:
       type: hdf5
@@ -62,33 +140,22 @@ First, copy the default and edit:
 
     keep_window_open: true
 
-Then run it:
-    ./cli/run.sh discretize output/examples/toy_plane/evocube.hdf5 my_discretize.yaml
-
-Discretization parameters (all optional; defaults shown in parentheses):
-    hex_size           (0.05)   edge length of one hex element
-    round_to_nearest   (false)  snap cuboid bounds to integer grid
-    padding            (true)   add a global padding layer of hexes
-
 
 ================================================================================
-2. HEXAHEDRALIZE — Pipeline Stage 3 (hex complex  ->  final hex mesh)
+4. HEXAHEDRALIZE — Pipeline Stage 3 (hex complex -> final hex mesh)
 ================================================================================
 
 Input must be an HDF5 with a polycube_complex (post-discretization).
-Produces stage_3_hexahedralization.hdf5 and result.mesh.
+Produces stage_3_hexahedralization.hdf5, result.mesh, and (if requested)
+result_metrics.yaml.
 
 ------- WITHOUT params
-    ./cli/run.sh hexahedralize output/runs/<example>/discretization_<date>_<NNN>/stage_2_discretization.hdf5
-    ./cli/run.sh hexahedralize output/runs/<example>/discretization_<date>_<NNN>/stage_2_discretization.hdf5 --exit-after
-
-Tip: To grab the most recent discretization run automatically:
     LATEST=$(ls -dt output/runs/<example>/discretization_*/ | head -1)
     ./cli/run.sh hexahedralize "${LATEST}stage_2_discretization.hdf5"
 
-------- WITH max params (custom YAML)
+------- WITH params (custom YAML)
     cp cli/configs/stage_hexahedralization.yaml my_hex.yaml
-    # then edit my_hex.yaml to look like:
+    # edit:
 
     input:
       type: hdf5
@@ -102,70 +169,32 @@ Tip: To grab the most recent discretization run automatically:
           fairness_weight: 0.0       # Laplacian smoothness on boundary
           smoothness_weight: 1.0     # normal smoothness
           learning_rate: 1.0e-4      # Adam optimizer learning rate
-          steps: 200                 # extra optimization steps after init
+          steps: 100                 # extra optimization steps after init
 
     output:
       run_dir: __RUN_DIR__
-      export_mesh: result.mesh       # filename relative to run_dir
+      export_mesh: result.mesh             # final hex mesh (MEDIT), relative to run_dir
+      export_metrics: result_metrics.yaml  # scaled-Jacobian / Jacobian summary sidecar
 
     keep_window_open: true
 
-Then run it:
-    ./cli/run.sh hexahedralize output/runs/<example>/discretization_<date>_<NNN>/stage_2_discretization.hdf5 my_hex.yaml
-
-Hexahedralization parameters (all optional; defaults shown in parentheses):
-    inversion_free      (true)    use smooth-deformation init (200 internal steps)
-    projection_weight   (1.0)     pull boundary verts toward input surface
-    hausdorff_weight    (1.0)     reduce worst-case surface distance
-    fairness_weight     (0.0)     Laplacian smoothness on boundary
-    smoothness_weight   (1.0)     normal smoothness
-    learning_rate       (1e-4)    Adam optimizer learning rate
-    steps               (100)     additional optimization steps after init
+The result_metrics.yaml sidecar reports total_hexes, inverted_count, and the
+min/max/mean/std of the scaled-Jacobian and Jacobian — a quick quality check
+without opening the mesh. inverted_count must be 0 for a valid mesh.
 
 
 ================================================================================
-3. FULL — Stages 2 + 3 chained in one run
+FULL CHAIN — run all four stages on one model
 ================================================================================
 
-Input must be an HDF5 with a polycube (post-decomposition). Both stages run
-in the same run directory, and you get all intermediate files:
-stage_2_discretization.hdf5, stage_3_hexahedralization.hdf5, result.mesh.
+    M=output/input_examples/stage_0_deformation/toy_plane.mesh
 
-------- WITHOUT params
-    ./cli/run.sh full output/examples/toy_plane/evocube.hdf5
-    ./cli/run.sh full output/examples/toy_plane/evocube.hdf5 --exit-after
+    ./cli/run.sh deform        "$M" --exit-after
+    ./cli/run.sh decompose     output/runs/toy_plane/deformation_*/stage_0_deformation.hdf5     --exit-after
+    ./cli/run.sh discretize    output/runs/toy_plane/decomposition_*/stage_1_decomposition.hdf5 --exit-after
+    ./cli/run.sh hexahedralize output/runs/toy_plane/discretization_*/stage_2_discretization.hdf5 --exit-after
 
-------- WITH max params (custom YAML)
-    cp cli/configs/full_pipeline.yaml my_full.yaml
-    # then edit my_full.yaml to look like:
-
-    input:
-      type: hdf5
-      path: __INPUT_PATH__
-
-    stages:
-      - discretization:
-          hex_size: 0.04
-          round_to_nearest: true
-          padding: false
-
-      - hexahedralization:
-          inversion_free: true
-          projection_weight: 2.0
-          hausdorff_weight: 1.5
-          fairness_weight: 0.1
-          smoothness_weight: 1.0
-          learning_rate: 5.0e-5
-          steps: 300
-
-    output:
-      run_dir: __RUN_DIR__
-      export_mesh: result.mesh
-
-    keep_window_open: true
-
-Then run it:
-    ./cli/run.sh full output/examples/toy_plane/evocube.hdf5 my_full.yaml
+The final hexahedralization run directory holds result.mesh + result_metrics.yaml.
 
 
 ================================================================================
@@ -186,9 +215,12 @@ directly. The placeholders __INPUT_PATH__ and __RUN_DIR__ must remain.
 TROUBLESHOOTING
 ================================================================================
 
+"[script] decomposition requires a deformed volume mesh"
+    Your input HDF5 has no deformed_volume_mesh. Run `deform` first and feed
+    its stage_0_deformation.hdf5 in.
+
 "[script] discretization requires a polycube"
-    Your input HDF5 doesn't have a polycube yet. Run decomposition in the GUI
-    first and save the project, then use that HDF5 as input.
+    Your input HDF5 has no polycube yet. Run `decompose` first.
 
 "[script] hexahedralization requires polycube_complex + ..."
     Your input HDF5 is missing one of polycube_complex, deformed_volume_mesh,

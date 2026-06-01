@@ -1,0 +1,28 @@
+# Deformation-only run (Pipeline Stage 0).
+#
+# Input may be:
+#   - a .mesh or .vtk tet mesh (GlobalController::LoadTargetMesh — default), or
+#   - an HDF5 produced by evocube/build_hdf5.py (has target_volume_mesh_).
+#
+# Produces stage_0_deformation.hdf5 in the run directory.
+#
+# Placeholders __INPUT_PATH__, __INPUT_TYPE__, __RUN_DIR__ are substituted by
+# cli/run.sh based on the file extension of the input.
+
+input:
+  type: __INPUT_TYPE__
+  path: __INPUT_PATH__
+
+stages:
+  - deformation:
+      cubeness_weight: 1.0       # push normals toward axis-aligned
+      smoothness_weight: 1.0     # penalize disagreeing adjacent normals
+      conformal_weight: 1.0      # distortion: angle preserving
+      authalic_weight: 1.0       # distortion: area preserving
+      learning_rate: 1.0e-3      # Adam
+      steps: 100                 # optimization steps
+
+output:
+  run_dir: __RUN_DIR__
+
+keep_window_open: true

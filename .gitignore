@@ -7,3 +7,7 @@
 
 lib/
 1.4.341.1/
+
+# Generated pipeline run outputs (curated inputs live in output/input_examples/
+# and output/examples/, which stay tracked).
+output/runs/

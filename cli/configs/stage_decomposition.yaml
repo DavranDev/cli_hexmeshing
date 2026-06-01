@@ -1,0 +1,38 @@
+# Decomposition-only run (Pipeline Stage 1).
+#
+# Input must already contain a deformed_volume_mesh (post Stage 0). Either:
+#   - an HDF5 from a prior `./cli/run.sh deform ...` run, or
+#   - an HDF5 with deformation done interactively in the GUI.
+#
+# Produces stage_1_decomposition.hdf5 in the run directory (contains the
+# polycube cuboid list + polycube_info).
+#
+# Placeholders __INPUT_PATH__ and __RUN_DIR__ are substituted by cli/run.sh.
+
+input:
+  type: hdf5
+  path: __INPUT_PATH__
+
+stages:
+  - decomposition:
+      # Auto-cuboid generation
+      num_cuboids: 8              # how many cuboids to greedily add
+      suggest_strategy: largest   # "largest" or "simple"
+      reopt_steps: 1000           # optimizer steps after adding cuboids
+
+      # Anchors panel
+      grid_size: 24
+      inside_only: false
+      bbox_padding: 0.2
+      surface_samples: 20000
+      perturbation: 0.10
+
+      # Optimizer panel
+      positive_l2_weight: 1.0
+      negative_l2_weight: 1.0
+      learning_rate: 5.0e-3
+
+output:
+  run_dir: __RUN_DIR__
+
+keep_window_open: true

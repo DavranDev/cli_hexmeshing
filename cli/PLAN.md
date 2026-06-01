@@ -2,6 +2,8 @@
 
 Plan for adding scripted, command-line driven execution of the hex meshing pipeline with minimal code change.
 
+> **Status (current):** All four stages — `deform` (0), `decompose` (1), `discretize` (2), `hexahedralize` (3) — are implemented and validated end-to-end (raw `.mesh` → `result.mesh`, 0 inverted hexes). The originally planned single `full` subcommand was dropped in favor of four per-stage subcommands chained by feeding each `stage_N_*.hdf5` forward. The sections below are the original design notes; the per-stage parameter tables still apply.
+
 ---
 
 ## 1. Framing — what this is, honestly
@@ -17,10 +19,11 @@ This is **scripted GUI automation via CLI arguments** — not a fully headless C
 ## 2. CLI surface — different subcommands per stage
 
 ```bash
-./cli/run.sh discretize     <input.hdf5>  [config.yaml]
-./cli/run.sh hexahedralize  <input.hdf5>  [config.yaml]
-./cli/run.sh full           <input.hdf5>  [config.yaml]   # discretize + hexahedralize
-./cli/run.sh <cmd> ... --exit-after                       # close GUI on completion
+./cli/run.sh deform         <input.mesh|input.hdf5>  [config.yaml]
+./cli/run.sh decompose      <input.hdf5>             [config.yaml]
+./cli/run.sh discretize     <input.hdf5>             [config.yaml]
+./cli/run.sh hexahedralize  <input.hdf5>             [config.yaml]
+./cli/run.sh <cmd> ... --exit-after                            # close GUI on completion
 ```
 
 If `[config.yaml]` is omitted, defaults are read from `cli/configs/stage_<cmd>.yaml`.
@@ -29,9 +32,10 @@ If `[config.yaml]` is omitted, defaults are read from `cli/configs/stage_<cmd>.y
 
 | Subcommand | Input must contain | Outputs in run dir |
 |---|---|---|
+| `deform` | tet mesh (`.mesh`/`.vtk`) or HDF5 with `target_volume_mesh` | `stage_0_deformation.hdf5` |
+| `decompose` | HDF5 with `deformed_volume_mesh` | `stage_1_decomposition.hdf5` |
 | `discretize` | `/polycube` (post-decomposition) | `stage_2_discretization.hdf5` |
-| `hexahedralize` | `/polycube_complex` (post-discretization) | `stage_3_hexahedralization.hdf5`, `result.mesh` |
-| `full` | `/polycube` | both above |
+| `hexahedralize` | `/polycube_complex` (post-discretization) | `stage_3_hexahedralization.hdf5`, `result.mesh`, `result_metrics.yaml` |
 
 ---
 
@@ -142,14 +146,12 @@ cli/
 ├── PLAN.md                            ← this file
 ├── README.md                          ← user-facing docs
 ├── run.sh                             ← subcommand wrapper (host)
-├── configs/
-│   ├── stage_discretization.yaml      ← Step 1
-│   ├── stage_hexahedralization.yaml   ← Step 1
-│   ├── stage_deformation.yaml         ← Step 2 (future)
-│   ├── stage_decomposition.yaml       ← Step 3 (future)
-│   └── full_pipeline.yaml             ← Step 1: stages 2+3
-└── examples/
-    └── toy_plane.yaml                 ← worked example
+├── how_to_run.txt                     ← step-by-step usage
+└── configs/
+    ├── stage_deformation.yaml         ← Stage 0
+    ├── stage_decomposition.yaml       ← Stage 1
+    ├── stage_discretization.yaml      ← Stage 2
+    └── stage_hexahedralization.yaml   ← Stage 3 (supports export_mesh + export_metrics)
 ```
 
 ### 6.1 YAML schema (Step 1 surface)

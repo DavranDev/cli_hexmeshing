@@ -21,6 +21,7 @@ stages:
 
 output:
   run_dir: __RUN_DIR__
-  export_mesh: result.mesh      # MEDIT-format final hex mesh (relative to run_dir)
+  export_mesh: result.mesh           # MEDIT-format final hex mesh (relative to run_dir)
+  export_metrics: result_metrics.yaml # scaled-Jacobian / Jacobian summary
 
 keep_window_open: true

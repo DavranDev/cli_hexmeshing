@@ -7,9 +7,10 @@
 #   ./cli/run.sh <subcommand> <input.hdf5> [config.yaml] [--exit-after]
 #
 # Subcommands:
+#   deform           run Stage 0 only
+#   decompose        run Stage 1 only
 #   discretize       run Stage 2 only
 #   hexahedralize    run Stage 3 only
-#   full             run Stages 2 + 3 chained
 #
 # The <input.hdf5> argument is REQUIRED on every invocation.
 # The output run directory under output/runs/ is generated automatically.
@@ -69,11 +70,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$SUBCOMMAND" in
+  deform)        DEFAULT_CONFIG="cli/configs/stage_deformation.yaml" ;;
+  decompose)     DEFAULT_CONFIG="cli/configs/stage_decomposition.yaml" ;;
   discretize)    DEFAULT_CONFIG="cli/configs/stage_discretization.yaml" ;;
   hexahedralize) DEFAULT_CONFIG="cli/configs/stage_hexahedralization.yaml" ;;
-  full)          DEFAULT_CONFIG="cli/configs/full_pipeline.yaml" ;;
   *)
-    echo "ERROR: unknown subcommand '$SUBCOMMAND'. Use: discretize | hexahedralize | full" >&2
+    echo "ERROR: unknown subcommand '$SUBCOMMAND'. Use: deform | decompose | discretize | hexahedralize" >&2
     exit 1
     ;;
 esac
@@ -93,13 +95,32 @@ fi
 
 INPUT_BASE="$(basename "$INPUT_HOST")"
 INPUT_STEM="${INPUT_BASE%.*}"
+INPUT_EXT="${INPUT_BASE##*.}"
 DATE_STAMP="$(date +%Y_%m_%d)"
+
+# Detect input type for the runner's YAML 'input.type' field.
+#   .hdf5 / .h5  -> hdf5 (Serializer::LoadState)
+#   .mesh / .vtk -> mesh (GlobalController::LoadTargetMesh)
+case "$INPUT_EXT" in
+  hdf5|h5) INPUT_TYPE="hdf5"; COPY_NAME="input.hdf5" ;;
+  mesh)    INPUT_TYPE="mesh"; COPY_NAME="input.mesh" ;;
+  vtk)     INPUT_TYPE="mesh"; COPY_NAME="input.vtk"  ;;
+  *)       INPUT_TYPE="hdf5"; COPY_NAME="input.hdf5" ;;  # default fallback
+esac
+
+# Only `deform` supports non-HDF5 input today (Stages 1-3 need a polycube /
+# polycube_complex which only exist in HDF5).
+if [[ "$INPUT_TYPE" == "mesh" && "$SUBCOMMAND" != "deform" ]]; then
+  echo "ERROR: subcommand '$SUBCOMMAND' requires an HDF5 input; got '$INPUT_EXT'" >&2
+  exit 1
+fi
 
 # Map subcommand to a friendly stage-dir name.
 case "$SUBCOMMAND" in
+  deform)        STAGE_DIRNAME="deformation" ;;
+  decompose)     STAGE_DIRNAME="decomposition" ;;
   discretize)    STAGE_DIRNAME="discretization" ;;
   hexahedralize) STAGE_DIRNAME="hexahedralization" ;;
-  full)          STAGE_DIRNAME="full" ;;
 esac
 
 # Derive the example name from the input path:
@@ -132,16 +153,19 @@ HOST_RUN_DIR="output/runs/${EXAMPLE_NAME}/${RUN_ID}"
 CONTAINER_RUN_DIR="/space/output/runs/${EXAMPLE_NAME}/${RUN_ID}"
 
 mkdir -p "$HOST_RUN_DIR"
-cp "$INPUT_HOST" "$HOST_RUN_DIR/input.hdf5"
+cp "$INPUT_HOST" "$HOST_RUN_DIR/$COPY_NAME"
 
 # ---- 4. Render run_config.yaml from template ----
 HOST_CONFIG="$HOST_RUN_DIR/run_config.yaml"
-CONTAINER_INPUT="${CONTAINER_RUN_DIR}/input.hdf5"
+CONTAINER_INPUT="${CONTAINER_RUN_DIR}/${COPY_NAME}"
 
 # Substitute the input/run_dir placeholders. The input path is ALWAYS the one
 # provided on the CLI — the YAML must contain __INPUT_PATH__ (the templates do).
+# __INPUT_TYPE__ is only consumed by stage_deformation.yaml (other stages
+# hardcode 'type: hdf5' since they require HDF5 inputs).
 sed -e "s|__INPUT_PATH__|${CONTAINER_INPUT}|g" \
     -e "s|__RUN_DIR__|${CONTAINER_RUN_DIR}|g" \
+    -e "s|__INPUT_TYPE__|${INPUT_TYPE}|g" \
     "$CONFIG_TEMPLATE" > "$HOST_CONFIG"
 
 # ---- 5. Launch docker with the GUI + script ----
