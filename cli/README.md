@@ -4,6 +4,8 @@ Run the hex-meshing pipeline from the command line. This is **scripted GUI autom
 
 For the architectural rationale, see [PLAN.md](PLAN.md). For the underlying pipeline, see [../PIPELINE_NOTES.md](../PIPELINE_NOTES.md).
 
+**Docs index:** [BUILD.md](BUILD.md) (build from scratch) · [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md) (usage + test cases) · [how_to_run.txt](how_to_run.txt) (step-by-step) · [SOURCE_CHANGES.md](SOURCE_CHANGES.md) (what changed in the CDM source) · [smoke_test.sh](smoke_test.sh) (one-command verify).
+
 ---
 
 ## Status
