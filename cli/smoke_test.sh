@@ -7,7 +7,7 @@
 # command to answer "does the tool still work after I changed the code?".
 #
 # Usage:
-#   ./cli/smoke_test.sh                 # uses the bundled toy_plane.mesh
+#   ./cli/smoke_test.sh                 # uses interactive-hex-meshing/assets/tutorial/spot.mesh
 #   ./cli/smoke_test.sh <input.mesh>    # use a different tet mesh (Stage-0 input)
 #
 # Requires the same Docker + NVIDIA + Vulkan + X11 setup the GUI/CLI needs.
@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-INPUT="${1:-output/input_examples/stage_0_deformation/toy_plane.mesh}"
+INPUT="${1:-interactive-hex-meshing/assets/tutorial/spot.mesh}"
 RUN="./cli/run.sh"
 
 if [[ ! -f "$INPUT" ]]; then

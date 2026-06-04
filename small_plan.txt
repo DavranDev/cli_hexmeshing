@@ -1,0 +1,229 @@
+================================================================================
+CDM (interactive-hex-meshing) COMMAND-LINE TOOL — 3-WEEK PLAN
+Owner: Davran   |   Drafted: 2026-06-01   |   First update due: Fri 2026-06-05
+================================================================================
+
+This plan turns the reviewer email into a 3-week schedule. Week 1 is what we
+present this Friday (plus the prep needed to present it). Weeks 2-3 cover the
+harder items: a self-contained Dockerfile, a native (non-Docker) build, a true
+no-GUI headless mode, and the GPU/Vulkan/CPU dependency analysis.
+
+Branch on GitHub: `cli-runner` (parent repo DavranDev/cli_hexmeshing, and the
+submodule DavranDev/interactive-hex-meshing). NOTE: the latest commits are still
+LOCAL — pushing them is the first Week-1 task (see 1B.1).
+
+
+================================================================================
+0. WHERE WE ARE NOW (already done — the basis of the Week-1 demo)
+================================================================================
+- CLI runner exists: `cli/run.sh <subcommand> <input> [config.yaml] [--exit-after]`,
+  driving the `hex` binary in YAML "script" mode.
+- ALL FOUR pipeline stages run from the CLI and are validated end-to-end:
+      deform (0) -> decompose (1) -> discretize (2) -> hexahedralize (3)
+  on the bundled `toy_plane` model, starting from a raw .mesh file.
+- Final mesh quality (toy_plane): 5826 hexes, 0 inverted, scaled-Jacobian
+  min 0.059 / mean 0.80 / max 0.9995. Written automatically to
+  result_metrics.yaml (export_metrics).
+- Fixed a real Stage-1 (decomposition) bug: in headless mode the optimized
+  polycube was being discarded (the GUI normally writes it back each frame).
+  Root-caused and fixed; output now contains the optimized polycube.
+- Docs refreshed: cli/{README,BUILD,USAGE_AND_TESTS,SOURCE_CHANGES,REPORT}.md.
+  Committed locally on `cli-runner`.
+
+Current limitation (important for the email): the tool still LAUNCHES THE GUI
+(Vulkan window), runs the script, and with `--exit-after` closes it and exits.
+It is "scripted GUI automation", not yet a true headless CLI. See Weeks 2-3.
+
+
+================================================================================
+1. WEEK 1  (this week — present by Friday 2026-06-05)
+================================================================================
+
+------------------------------------------------------------
+1A. WHAT WE PRESENT  (the story + live demo)
+------------------------------------------------------------
+1. Live end-to-end demo: one raw .mesh -> 4 stages -> result.mesh + metrics.
+2. The quality numbers (0 inverted hexes, scaled-Jacobian summary) as the
+   "it works and the output is good" evidence.
+3. The Stage-1 root-cause + fix write-up (shows we understand the CDM internals,
+   not just wrapping them).
+4. Simplified DOWNLOAD + BUILD + RUN guide (Docker path) — reviewer can
+   reproduce.
+5. A precise "WHAT WE CHANGED IN THE ORIGINAL SOURCE" report (see 4A) so the
+   team can see exactly which CDM files were touched.
+6. Prebuilt binary + the exact environment needed to run it.
+
+------------------------------------------------------------
+1B. WHAT MUST BE DONE BEFORE PRESENTING  (prep checklist)
+------------------------------------------------------------
+[x] 1. PUSH the `cli-runner` branch to GitHub (submodule first, then parent +
+       DONE: submodule f094159..b89d47b, parent ca61d15..e1a8206, both on
+       cli-runner (main untouched).
+       pointer). Confirm a fresh `git clone --recurse-submodules` checks out the
+       exact reviewed state.
+[x] 2. BUILD.md — simplified from-scratch build, DOCKER path:   (DONE: cli/BUILD.md)
+         - clone with submodules
+         - `docker build` / pull the `docker-hexmesh` image
+         - `. /space/compile.sh` (or the consolidated build step)
+         - sanity-run the smoke test
+       Keep it copy-paste runnable; this text feeds the report.
+[x] 3. SOURCE_CHANGES.md — the change-tracking deliverable (data already in 4A):   (DONE: cli/SOURCE_CHANGES.md)
+         - list NEW files (hex/src/cli/*) vs MODIFIED original files
+         - one line per modified file describing the (additive) change
+         - state clearly: original model/optimizer ALGORITHMS are unchanged.
+[x] 4. USAGE_AND_TESTS.md (or fold into BUILD.md):   (DONE: cli/USAGE_AND_TESTS.md)
+         - simplest one-liner per stage + the full 4-stage chain
+         - the toy_plane TEST CASE with EXPECTED metrics (0 inverted, mean
+           scaled-Jac ~0.80) as the pass/fail check
+         - "how to verify after you modify the code": rebuild -> run smoke test
+           -> compare metrics.
+[x] 5. BINARY delivery: published as Release asset `cli-runner-v1`:
+       https://github.com/DavranDev/cli_hexmeshing/releases/download/cli-runner-v1/hex
+       tracked `dist/` file) + document the EXACT runtime env it needs
+       (docker-hexmesh image, CUDA 12.4, libtorch version, Vulkan SDK, NVIDIA
+       driver + X11 display). Note: it only runs on a matching environment.
+[x] 6. smoke_test.sh — one script that runs the 4 stages on toy_plane with   (DONE: cli/smoke_test.sh, PASS: 5826 hexes, 0 inverted)
+       --exit-after and asserts inverted_count == 0. Makes "does it still work?"
+       a single command for reviewers and for us after every edit.
+
+Deliverable Friday: pushed branch + BUILD.md + SOURCE_CHANGES.md +
+USAGE_AND_TESTS.md + binary + smoke_test.sh + the demo.
+
+
+================================================================================
+2. WEEK 2  (reproducible builds + headless investigation)
+================================================================================
+[ ] 1. SELF-CONTAINED DOCKERFILE that builds the UPDATED source end-to-end.
+       Today the flow is: prebuilt `docker-hexmesh` image + host source mounted +
+       compile.sh. Goal: a single Dockerfile that COPYs/clones the updated source,
+       installs deps (CUDA toolkit, libtorch, Vulkan SDK, system libs), compiles
+       evocube + hex, and yields a ready-to-run image. Document every step.
+[ ] 2. NON-DOCKER (native / bare-metal) BUILD instructions:
+         - enumerate host prerequisites (CUDA toolkit + driver, libtorch matching
+           CUDA, Vulkan SDK 1.3.x, CMake, GCC, X11/GL libs, Eigen, etc.)
+         - step-by-step build of evocube + hex without Docker
+         - test on as-clean-as-possible a machine; record gaps/pitfalls.
+       (Risk: hard to fully verify without a clean host — see Risks.)
+[ ] 3. HEADLESS — investigation + scoping (feeds Week 3 implementation):
+         - confirm/keep current `--exit-after` (GUI opens, runs, closes).
+         - trace where the Vulkan window/context is created (main.cpp ->
+           HexMeshingApp::Prepare) and which stage code touches GUI/view objects
+           (e.g. UpdateAnchorsView, PolycubeView.Update).
+         - produce a feasibility memo: what must be stubbed/guarded to skip the
+           window entirely (a `--headless` path). Prototype if time allows.
+[ ] 4. DEPENDENCY MAP — part 1: instrument each stage and record which calls hit
+       CUDA (compute) vs Vulkan (render). Start the per-stage table in 4B.
+
+
+================================================================================
+3. WEEK 3  (true headless mode + GPU/CPU analysis + report)
+================================================================================
+[ ] 1. GPU / VULKAN / NVIDIA DEPENDENCY MAP — final, per stage. Key framing
+       (preliminary in 4B): Vulkan + X11 are ONLY the GUI renderer; the pipeline
+       MATH uses CUDA/libtorch + geomlib .cu kernels. So "remove NVIDIA/Vulkan"
+       is really TWO questions: (a) drop Vulkan/X11 -> headless; (b) drop CUDA ->
+       CPU-only. Deliver the table + the split.
+[ ] 2. HEADLESS MODE — deliver: either implement a `--headless` path that skips
+       Vulkan window creation (if Week-2 scoping says it's tractable), OR deliver
+       a concrete design + effort estimate if it is a larger refactor.
+[ ] 3. CPU-ONLY FEASIBILITY: assess each GPU touch-point —
+         - libtorch CUDA ops (optimizers): many port to CPU tensors cheaply.
+         - geomlib CUDA kernels (PointTetMeshTest, GeneralizedTriangleProjection):
+           CUDA-only today; CPU would need kernel ports.
+       Identify which STAGES could run CPU-only now vs which need work. Stage 2
+       (discretization) looks largely combinatorial -> best CPU-only candidate
+       (VERIFY). Deliver a feasibility report + recommended path.
+[ ] 4. REPORT assembly: consolidate BUILD/USAGE/TESTS/SOURCE_CHANGES + the
+       headless + GPU/CPU analysis into one report-ready document.
+
+
+================================================================================
+4. PRELIMINARY TECHNICAL FINDINGS (seed material for the report)
+================================================================================
+
+------------------------------------------------------------
+4A. Did we modify the ORIGINAL CDM source, or only add a wrapper?
+------------------------------------------------------------
+Both — but the original source changes are thin and additive. The whole CLI
+effort vs the pre-CLI baseline is +590 / -4 lines across 18 files.
+
+  * PARENT repo `cli/` folder = pure WRAPPER (run.sh, YAML configs, docs). No
+    original CDM source there.
+  * SUBMODULE (the CDM source) — NEW files (most of the new logic):
+        hex/src/cli/PipelineScriptRunner.{h,cpp}   (YAML parse + per-stage dispatch)
+        hex/src/cli/MetricsDumper.{h,cpp}          (quality sidecar)
+  * SUBMODULE — MODIFIED original files (small, additive shims):
+        hex/src/main.cpp                 (+32)  --script / --exit-after parsing
+        hex/CMakeLists.txt               (+1)   glob src/cli/*.cpp
+        hex/src/HexMeshingApp.h          (+1)   GetGlobalController() accessor
+        controllers/GlobalController.*   (+17)  Open/Save/Export accessors
+        stages/DeformationStage.*        (+50)  RunFromScript()
+        stages/DecompositionStage.*      (+76)  RunFromScript() + optimized-polycube writeback (our fix)
+        stages/DiscretizationStage.*     (+27)  RunFromScript()
+        stages/HexahedralizationStage.*  (+62)  RunFromScript()
+        optim/PolycubeOptimizer.h        (+8)   expose GetOptimizedPolycube() (our fix)
+
+  => The model / optimizer / geometry ALGORITHMS are unchanged. Each stage gained
+     a thin public RunFromScript() that calls the SAME private methods the GUI
+     buttons call. Only 4 deleted lines total (a visibility move + a no-op revert).
+  => Week-1 SOURCE_CHANGES.md formalizes this with the exact diff.
+
+------------------------------------------------------------
+4B. GPU / Vulkan / CUDA split (PRELIMINARY — to verify in Weeks 2-3)
+------------------------------------------------------------
+Two SEPARATE dependencies, often conflated:
+  * VULKAN + X11/display  -> used ONLY to render the GUI window. The pipeline
+    computation does NOT use Vulkan. This is what a headless mode would remove.
+  * CUDA / NVIDIA         -> used for the actual MATH: libtorch (CUDA tensors,
+    Adam, autograd/backward) + geomlib custom .cu kernels. This is what a
+    CPU-only mode would have to replace.
+
+Per-stage, preliminary (CONFIRM by tracing in Week 2):
+  Stage 0 deform        : libtorch CUDA (volumetric deformation optimizer).  GPU.
+  Stage 1 decompose     : geomlib CUDA kernels (SDF: PointTetMeshTest,
+                          GeneralizedTriangleProjection) + libtorch CUDA
+                          (PolycubeOptimizer Adam/backward).                 GPU.
+  Stage 2 discretize    : appears largely combinatorial (regular grid + quad
+                          extraction) — strongest CPU-only candidate.        VERIFY.
+  Stage 3 hexahedralize : libtorch CUDA + geomlib projection (HexComplexDeformer). GPU.
+
+Implication: a headless (no-Vulkan) mode looks more tractable than a CPU-only
+(no-CUDA) mode. Recommend tackling headless first (Vulkan is display-only), then
+scope CPU-only per stage (Stage 2 first).
+
+
+================================================================================
+5. RISKS / OPEN QUESTIONS / DECISIONS NEEDED
+================================================================================
+- PUSH: latest work is committed locally only. Need go-ahead to push `cli-runner`
+  to both forks so reviewers can pull. (Required before Friday.)
+- BINARY PORTABILITY: the prebuilt `hex` only runs on a matching environment
+  (CUDA 12.4 + matching driver + libtorch + Vulkan). "Same system environment"
+  must be confirmed, else reviewers fall back to the Docker build.
+- NATIVE BUILD: fully documenting/verifying a non-Docker build is the riskiest
+  Week-2 item without a clean test machine; may slip to a "best-effort + known
+  gaps" doc.
+- TRUE HEADLESS: may need a non-trivial refactor of app startup + guarding the
+  view/GUI calls inside stages. Week 2 delivers feasibility; Week 3 delivers
+  impl-or-design accordingly.
+- CPU-ONLY: geomlib ships CUDA-only kernels; a full CPU path is a larger effort.
+  Likely outcome is "Stage 2 CPU-capable + a costed plan for the rest", not a
+  full CPU pipeline in 3 weeks.
+
+================================================================================
+COVERAGE CHECK (every email task is scheduled)
+================================================================================
+  simplified build guide ............... W1 (Docker) + W2 (native)
+  Docker + non-Docker build ............ W1 / W2
+  self-contained Dockerfile ............ W2
+  document build/usage/tests ........... W1 (initial) + W3 (report)
+  provide compiled binary .............. W1
+  simplest usage + I/O behavior ........ W1
+  test cases to verify ................. W1 (smoke_test.sh)
+  track original-source changes ........ W1 (SOURCE_CHANGES.md; data in 4A)
+  keep under Git ....................... ongoing (done; push in W1)
+  avoid GUI / auto-close GUI ........... W1 documents --exit-after; W2-3 headless
+  true command-line (no GUI) mode ...... W2 scope -> W3 impl/design
+  which steps need NVIDIA/Vulkan/GPU ... W2 start -> W3 final map (4B)
+  which steps can be CPU-only .......... W3
+================================================================================

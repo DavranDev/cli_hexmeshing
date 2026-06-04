@@ -19,8 +19,8 @@ stages:
       smoothness_weight: 1.0     # penalize disagreeing adjacent normals
       conformal_weight: 1.0      # distortion: angle preserving
       authalic_weight: 1.0       # distortion: area preserving
-      learning_rate: 1.0e-3      # Adam
-      steps: 100                 # optimization steps
+      learning_rate: 1.0e-3     # Adam
+      steps: 2000                # optimization steps
 
 output:
   run_dir: __RUN_DIR__

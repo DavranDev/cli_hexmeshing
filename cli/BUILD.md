@@ -74,9 +74,9 @@ generate fresh polycube inputs from raw `.obj` files.
 From the **host** (not the build shell) — `cli/run.sh` launches its own
 container per stage:
 ```bash
-./cli/run.sh deform output/input_examples/stage_0_deformation/toy_plane.mesh --exit-after
+./cli/run.sh deform interactive-hex-meshing/assets/tutorial/spot.mesh --exit-after
 ```
-See [how_to_run.txt](how_to_run.txt) and [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md)
+See [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md)
 for all four stages and the full chain. To verify the whole pipeline in one
 command:
 ```bash

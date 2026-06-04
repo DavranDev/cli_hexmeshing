@@ -2,9 +2,9 @@
 
 Run the hex-meshing pipeline from the command line. This is **scripted GUI automation**, not a fully headless CLI: the existing `hex` binary still launches the Vulkan window, but it now reads a YAML script on startup and runs the requested stage automatically. The window stays open for inspection unless `--exit-after` is passed.
 
-For the architectural rationale, see [PLAN.md](PLAN.md). For the underlying pipeline, see [../PIPELINE_NOTES.md](../PIPELINE_NOTES.md).
+For the underlying pipeline, see [../PIPELINE_NOTES.md](../PIPELINE_NOTES.md).
 
-**Docs index:** [BUILD.md](BUILD.md) (build from scratch) · [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md) (usage + test cases) · [how_to_run.txt](how_to_run.txt) (step-by-step) · [SOURCE_CHANGES.md](SOURCE_CHANGES.md) (what changed in the CDM source) · [smoke_test.sh](smoke_test.sh) (one-command verify).
+**Docs index:** [REPORT.md](REPORT.md) (Week-1 summary report) · [BUILD.md](BUILD.md) (build from scratch) · [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md) (usage + test cases) · [SOURCE_CHANGES.md](SOURCE_CHANGES.md) (what changed in the CDM source) · [smoke_test.sh](smoke_test.sh) (one-command verify).
 
 ---
 
@@ -46,16 +46,20 @@ There is no single `full` subcommand: run the stages in sequence, feeding each `
 
 If `[config.yaml]` is omitted, the default at `cli/configs/stage_<subcommand>.yaml` is used. To customize parameters, copy a default YAML, edit it, and pass it as the third argument — `cli/run.sh` substitutes the input path and run-directory placeholders for you.
 
-### Worked example — full chain on `toy_plane`
+### Worked example — full chain on `spot`
 
 ```bash
-M=output/input_examples/stage_0_deformation/toy_plane.mesh
+M=interactive-hex-meshing/assets/tutorial/spot.mesh
 
 ./cli/run.sh deform        "$M" --exit-after
-./cli/run.sh decompose     output/runs/toy_plane/deformation_*/stage_0_deformation.hdf5   --exit-after
-./cli/run.sh discretize    output/runs/toy_plane/decomposition_*/stage_1_decomposition.hdf5 --exit-after
-./cli/run.sh hexahedralize output/runs/toy_plane/discretization_*/stage_2_discretization.hdf5 --exit-after
+./cli/run.sh decompose     output/runs/spot/deformation_*/stage_0_deformation.hdf5   --exit-after
+./cli/run.sh discretize    output/runs/spot/decomposition_*/stage_1_decomposition.hdf5 --exit-after
+./cli/run.sh hexahedralize output/runs/spot/discretization_*/stage_2_discretization.hdf5 --exit-after
 ```
+
+Other ready-to-use Stage-0 tet meshes ship alongside it in
+`interactive-hex-meshing/assets/tutorial/` (`bob`, `bunny`, `horse`,
+`rockerArm`, `spot`, plus `kitten.vtk`).
 
 The final run directory holds `result.mesh` plus a `result_metrics.yaml` quality sidecar.
 
@@ -78,7 +82,7 @@ output/runs/<example>/<stage>_<YYYY_MM_DD>_<NNN>/
 └── log.txt                             # combined stdout + stderr
 ```
 
-- `<example>` is auto-derived from the input path — usually the input filename stem (e.g. `toy_plane.mesh` → `toy_plane`). When the input is itself a chained `stage_N_*.hdf5` from a previous run, the example name is taken from the enclosing folder so the new run lands next to its predecessor.
+- `<example>` is auto-derived from the input path — usually the input filename stem (e.g. `spot.mesh` → `spot`). When the input is itself a chained `stage_N_*.hdf5` from a previous run, the example name is taken from the enclosing folder so the new run lands next to its predecessor.
 - `<stage>` is one of `deformation`, `decomposition`, `discretization`, `hexahedralization`.
 - `<NNN>` is a 3-digit zero-padded counter that auto-increments to avoid collisions for the same example + stage + day.
 

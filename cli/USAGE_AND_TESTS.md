@@ -1,7 +1,7 @@
 # Usage & test cases
 
 Report-grade quick reference for running the CLI and verifying it works. Full
-parameter docs are in [README.md](README.md) and [how_to_run.txt](how_to_run.txt).
+parameter docs are in [README.md](README.md).
 
 ## Simplest usage
 
@@ -28,39 +28,44 @@ Input → output per stage:
 ## Full chain (all four stages)
 
 ```bash
-M=output/input_examples/stage_0_deformation/toy_plane.mesh
+M=interactive-hex-meshing/assets/tutorial/spot.mesh
 ./cli/run.sh deform        "$M" --exit-after
-./cli/run.sh decompose     output/runs/toy_plane/deformation_*/stage_0_deformation.hdf5     --exit-after
-./cli/run.sh discretize    output/runs/toy_plane/decomposition_*/stage_1_decomposition.hdf5 --exit-after
-./cli/run.sh hexahedralize output/runs/toy_plane/discretization_*/stage_2_discretization.hdf5 --exit-after
+./cli/run.sh decompose     output/runs/spot/deformation_*/stage_0_deformation.hdf5     --exit-after
+./cli/run.sh discretize    output/runs/spot/decomposition_*/stage_1_decomposition.hdf5 --exit-after
+./cli/run.sh hexahedralize output/runs/spot/discretization_*/stage_2_discretization.hdf5 --exit-after
 ```
 
 The final hexahedralization run directory holds `result.mesh` (the hex mesh,
 MEDIT format) and `result_metrics.yaml` (quality summary).
 
-## Test case: `toy_plane` (the reference)
+## Test case: tutorial meshes (the reference)
 
-Input: `output/input_examples/stage_0_deformation/toy_plane.mesh` (8443-vertex
-tet mesh). Running the full chain is automated by:
+Inputs ship in `interactive-hex-meshing/assets/tutorial/` — six ready-to-use
+Stage-0 tet meshes: `bob`, `bunny`, `horse`, `rockerArm`, `spot` (`.mesh`) and
+`kitten.vtk`. The smoke test defaults to `spot.mesh`; running the full chain is
+automated by:
 
 ```bash
-./cli/smoke_test.sh        # runs all 4 stages and checks the result
+./cli/smoke_test.sh                  # full 4-stage run on spot.mesh
+./cli/smoke_test.sh interactive-hex-meshing/assets/tutorial/bunny.mesh   # any other tutorial mesh
 ```
 
-**Expected result (pass criteria):**
+**Pass criteria (model-agnostic):**
 
 | Check | Expected |
 |---|---|
 | All four stages exit 0 | yes |
-| `result.mesh` produced | 4963 vertices, **5826 hexes** |
+| `result.mesh` produced | yes (vertex/hex counts depend on the model + `hex_size`) |
+| `total_hexes` | **> 0** |
 | `inverted_count` | **0** (hard requirement — any inversion = fail) |
-| scaled-Jacobian | min ≈ 0.059, **mean ≈ 0.80**, max ≈ 0.9995 |
 
 `smoke_test.sh` prints `PASS` and exits 0 when `inverted_count == 0` and
 `total_hexes > 0`; otherwise it prints `FAIL` and exits 1.
 
-> Small run-to-run variation in the scaled-Jacobian decimals is normal (the
-> optimizers are stochastic). The gate is **0 inverted hexes**, not exact values.
+> The exact hex count and scaled-Jacobian values are model-dependent and the
+> optimizers are stochastic, so they vary per run/mesh. They are written to
+> `result_metrics.yaml` and echoed by the smoke test — record them there for the
+> mesh you demo. The pass gate is **0 inverted hexes**, not specific values.
 
 ## Verifying after you modify the code
 
