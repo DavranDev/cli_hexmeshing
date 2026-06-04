@@ -36,25 +36,25 @@ There is no single `full` subcommand: run the stages in sequence, feeding each `
 ## Usage
 
 ```bash
-./cli/run.sh deform         <input.mesh|input.hdf5>  [config.yaml]  [--exit-after]
-./cli/run.sh decompose      <input.hdf5>             [config.yaml]  [--exit-after]
-./cli/run.sh discretize     <input.hdf5>             [config.yaml]  [--exit-after]
-./cli/run.sh hexahedralize  <input.hdf5>             [config.yaml]  [--exit-after]
+./cli_run/run.sh deform         <input.mesh|input.hdf5>  [config.yaml]  [--exit-after]
+./cli_run/run.sh decompose      <input.hdf5>             [config.yaml]  [--exit-after]
+./cli_run/run.sh discretize     <input.hdf5>             [config.yaml]  [--exit-after]
+./cli_run/run.sh hexahedralize  <input.hdf5>             [config.yaml]  [--exit-after]
 ```
 
 `deform` is the only subcommand that accepts a raw `.mesh`/`.vtk` tet mesh (detected by extension); Stages 1–3 require an HDF5 carrying the field listed in the table above.
 
-If `[config.yaml]` is omitted, the default at `cli/configs/stage_<subcommand>.yaml` is used. To customize parameters, copy a default YAML, edit it, and pass it as the third argument — `cli/run.sh` substitutes the input path and run-directory placeholders for you.
+If `[config.yaml]` is omitted, the default at `cli_run/configs/stage_<subcommand>.yaml` is used. To customize parameters, copy a default YAML, edit it, and pass it as the third argument — `cli_run/run.sh` substitutes the input path and run-directory placeholders for you.
 
 ### Worked example — full chain on `spot`
 
 ```bash
 M=interactive-hex-meshing/assets/tutorial/spot.mesh
 
-./cli/run.sh deform        "$M" --exit-after
-./cli/run.sh decompose     output/runs/spot/deformation_*/stage_0_deformation.hdf5   --exit-after
-./cli/run.sh discretize    output/runs/spot/decomposition_*/stage_1_decomposition.hdf5 --exit-after
-./cli/run.sh hexahedralize output/runs/spot/discretization_*/stage_2_discretization.hdf5 --exit-after
+./cli_run/run.sh deform        "$M" --exit-after
+./cli_run/run.sh decompose     output/runs/spot/deformation_*/stage_0_deformation.hdf5   --exit-after
+./cli_run/run.sh discretize    output/runs/spot/decomposition_*/stage_1_decomposition.hdf5 --exit-after
+./cli_run/run.sh hexahedralize output/runs/spot/discretization_*/stage_2_discretization.hdf5 --exit-after
 ```
 
 Other ready-to-use Stage-0 tet meshes ship alongside it in
@@ -90,7 +90,7 @@ output/runs/<example>/<stage>_<YYYY_MM_DD>_<NNN>/
 
 ## YAML schema
 
-Default templates live in `cli/configs/` (`stage_deformation.yaml`, `stage_decomposition.yaml`, `stage_discretization.yaml`, `stage_hexahedralization.yaml`). Each uses `__INPUT_PATH__`, `__RUN_DIR__`, and (deform only) `__INPUT_TYPE__` placeholders that `run.sh` substitutes before launching. Any parameter you omit falls back to the in-code GUI default.
+Default templates live in `cli_run/configs/` (`stage_deformation.yaml`, `stage_decomposition.yaml`, `stage_discretization.yaml`, `stage_hexahedralization.yaml`). Each uses `__INPUT_PATH__`, `__RUN_DIR__`, and (deform only) `__INPUT_TYPE__` placeholders that `run.sh` substitutes before launching. Any parameter you omit falls back to the in-code GUI default.
 
 ### Deformation (`deform`)
 

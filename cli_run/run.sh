@@ -4,7 +4,7 @@
 # interactive-hex-meshing GUI from the command line.
 #
 # Usage:
-#   ./cli/run.sh <subcommand> <input.hdf5> [config.yaml] [--exit-after]
+#   ./cli_run/run.sh <subcommand> <input.hdf5> [config.yaml] [--exit-after]
 #
 # Subcommands:
 #   deform           run Stage 0 only
@@ -15,7 +15,7 @@
 # The <input.hdf5> argument is REQUIRED on every invocation.
 # The output run directory under output/runs/ is generated automatically.
 # All parameters are read from the YAML config — to tune them, copy a default
-# from cli/configs/, edit the values, and pass your file as [config.yaml].
+# from cli_run/configs/, edit the values, and pass your file as [config.yaml].
 #
 # Optional flags:
 #   --exit-after     close the GUI window when the script finishes
@@ -70,10 +70,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$SUBCOMMAND" in
-  deform)        DEFAULT_CONFIG="cli/configs/stage_deformation.yaml" ;;
-  decompose)     DEFAULT_CONFIG="cli/configs/stage_decomposition.yaml" ;;
-  discretize)    DEFAULT_CONFIG="cli/configs/stage_discretization.yaml" ;;
-  hexahedralize) DEFAULT_CONFIG="cli/configs/stage_hexahedralization.yaml" ;;
+  deform)        DEFAULT_CONFIG="cli_run/configs/stage_deformation.yaml" ;;
+  decompose)     DEFAULT_CONFIG="cli_run/configs/stage_decomposition.yaml" ;;
+  discretize)    DEFAULT_CONFIG="cli_run/configs/stage_discretization.yaml" ;;
+  hexahedralize) DEFAULT_CONFIG="cli_run/configs/stage_hexahedralization.yaml" ;;
   *)
     echo "ERROR: unknown subcommand '$SUBCOMMAND'. Use: deform | decompose | discretize | hexahedralize" >&2
     exit 1
@@ -196,7 +196,7 @@ docker run \
   -v "$REPO_ROOT/compile.sh:/space/compile.sh" \
   -v "$REPO_ROOT/data:/space/data" \
   -v "$REPO_ROOT/output:/space/output" \
-  -v "$REPO_ROOT/cli:/space/cli" \
+  -v "$REPO_ROOT/cli_run:/space/cli_run" \
   docker-hexmesh \
   bash -c "source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh \
            && cd /space/interactive-hex-meshing/bin/Release \

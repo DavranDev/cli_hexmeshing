@@ -9,5 +9,5 @@ lib/
 1.4.341.1/
 
 # Generated pipeline run outputs (the whole output/ tree is created at runtime
-# by cli/run.sh; demo inputs come from interactive-hex-meshing/assets/tutorial/).
+# by cli_run/run.sh; demo inputs come from interactive-hex-meshing/assets/tutorial/).
 output/

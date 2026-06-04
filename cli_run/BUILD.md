@@ -1,6 +1,6 @@
 # Building the command-line hex-meshing tool from scratch
 
-This guide builds the **CLI** hex-meshing tool (`hex` binary + `cli/run.sh`
+This guide builds the **CLI** hex-meshing tool (`hex` binary + `cli_run/run.sh`
 wrapper) from a clean checkout. The repo's top-level [README.md](../README.md)
 covers the original GUI workflow; this document is the CLI-focused, reproducible
 build for reviewers.
@@ -71,20 +71,20 @@ You only need `hex` for the CLI; evocube is built too but is only needed to
 generate fresh polycube inputs from raw `.obj` files.
 
 ### A.5 Run the CLI
-From the **host** (not the build shell) — `cli/run.sh` launches its own
+From the **host** (not the build shell) — `cli_run/run.sh` launches its own
 container per stage:
 ```bash
-./cli/run.sh deform interactive-hex-meshing/assets/tutorial/spot.mesh --exit-after
+./cli_run/run.sh deform interactive-hex-meshing/assets/tutorial/spot.mesh --exit-after
 ```
 See [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md)
 for all four stages and the full chain. To verify the whole pipeline in one
 command:
 ```bash
-./cli/smoke_test.sh        # PASS = valid hex mesh, 0 inverted
+./cli_run/smoke_test.sh        # PASS = valid hex mesh, 0 inverted
 ```
 
 > **Rebuilding after a source change:** re-enter `. ./run_docker.sh` and run
-> `. /space/compile.sh` again (it's incremental), then re-run `cli/smoke_test.sh`.
+> `. /space/compile.sh` again (it's incremental), then re-run `cli_run/smoke_test.sh`.
 
 ---
 
@@ -138,14 +138,14 @@ A prebuilt `hex` is published as a GitHub Release asset on the fork. It runs
 - an X11 display (`DISPLAY` set) — the binary opens a Vulkan window.
 
 Drop the downloaded `hex` into `interactive-hex-meshing/bin/Release/` and use
-`cli/run.sh` as in A.5. If your environment differs, build from source (A or B).
+`cli_run/run.sh` as in A.5. If your environment differs, build from source (A or B).
 
 ---
 
 ## GUI note (current limitation)
 
 The tool currently still **launches the Vulkan GUI window**, runs the requested
-stage(s), and — with `--exit-after` (which `cli/run.sh` and `smoke_test.sh`
+stage(s), and — with `--exit-after` (which `cli_run/run.sh` and `smoke_test.sh`
 pass) — closes the window and exits. So it needs Vulkan + a display today. A true
 no-GUI headless mode (and a look at which steps actually need the GPU) is on the
 roadmap; see `small_plan.txt`.

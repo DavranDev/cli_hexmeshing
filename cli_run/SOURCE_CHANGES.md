@@ -13,7 +13,7 @@ was changed.** The whole CLI effort is **+590 / −4 lines across 18 files**.
 
 | Repo | Role | Nature of change |
 |---|---|---|
-| `cli_hexmeshing` (parent) | host wrapper | **Pure addition** — the `cli/` folder (`run.sh`, YAML configs, docs, `smoke_test.sh`). No upstream source here. |
+| `cli_hexmeshing` (parent) | host wrapper | **Pure addition** — the `cli_run/` folder (`run.sh`, YAML configs, docs, `smoke_test.sh`). No upstream source here. |
 | `interactive-hex-meshing` (submodule) | the CDM source | New `hex/src/cli/` files + thin shims on existing files (below). |
 
 ## Regenerate the exact diff

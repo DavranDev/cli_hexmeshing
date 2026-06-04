@@ -3,7 +3,7 @@
 # Input HDF5 must already contain a polycube_complex (post-discretization).
 # Produces stage_3_hexahedralization.hdf5 + result.mesh in the run directory.
 #
-# Placeholders __INPUT_PATH__ and __RUN_DIR__ are substituted by cli/run.sh.
+# Placeholders __INPUT_PATH__ and __RUN_DIR__ are substituted by cli_run/run.sh.
 
 input:
   type: hdf5

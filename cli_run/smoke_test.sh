@@ -7,8 +7,8 @@
 # command to answer "does the tool still work after I changed the code?".
 #
 # Usage:
-#   ./cli/smoke_test.sh                 # uses interactive-hex-meshing/assets/tutorial/spot.mesh
-#   ./cli/smoke_test.sh <input.mesh>    # use a different tet mesh (Stage-0 input)
+#   ./cli_run/smoke_test.sh                 # uses interactive-hex-meshing/assets/tutorial/spot.mesh
+#   ./cli_run/smoke_test.sh <input.mesh>    # use a different tet mesh (Stage-0 input)
 #
 # Requires the same Docker + NVIDIA + Vulkan + X11 setup the GUI/CLI needs.
 # Exits 0 and prints PASS if the pipeline produces a valid (non-inverted) hex
@@ -20,7 +20,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 INPUT="${1:-interactive-hex-meshing/assets/tutorial/spot.mesh}"
-RUN="./cli/run.sh"
+RUN="./cli_run/run.sh"
 
 if [[ ! -f "$INPUT" ]]; then
   echo "FAIL: input not found: $INPUT" >&2

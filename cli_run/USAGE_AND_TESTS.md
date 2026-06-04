@@ -10,10 +10,10 @@ input file, the tool writes a run directory under `output/runs/<example>/` and
 prints where. `--exit-after` closes the GUI window when the stage finishes.
 
 ```bash
-./cli/run.sh deform         <input.mesh|.hdf5>  --exit-after   # Stage 0
-./cli/run.sh decompose      <stage_0.hdf5>      --exit-after   # Stage 1
-./cli/run.sh discretize     <stage_1.hdf5>      --exit-after   # Stage 2
-./cli/run.sh hexahedralize  <stage_2.hdf5>      --exit-after   # Stage 3
+./cli_run/run.sh deform         <input.mesh|.hdf5>  --exit-after   # Stage 0
+./cli_run/run.sh decompose      <stage_0.hdf5>      --exit-after   # Stage 1
+./cli_run/run.sh discretize     <stage_1.hdf5>      --exit-after   # Stage 2
+./cli_run/run.sh hexahedralize  <stage_2.hdf5>      --exit-after   # Stage 3
 ```
 
 Input → output per stage:
@@ -29,10 +29,10 @@ Input → output per stage:
 
 ```bash
 M=interactive-hex-meshing/assets/tutorial/spot.mesh
-./cli/run.sh deform        "$M" --exit-after
-./cli/run.sh decompose     output/runs/spot/deformation_*/stage_0_deformation.hdf5     --exit-after
-./cli/run.sh discretize    output/runs/spot/decomposition_*/stage_1_decomposition.hdf5 --exit-after
-./cli/run.sh hexahedralize output/runs/spot/discretization_*/stage_2_discretization.hdf5 --exit-after
+./cli_run/run.sh deform        "$M" --exit-after
+./cli_run/run.sh decompose     output/runs/spot/deformation_*/stage_0_deformation.hdf5     --exit-after
+./cli_run/run.sh discretize    output/runs/spot/decomposition_*/stage_1_decomposition.hdf5 --exit-after
+./cli_run/run.sh hexahedralize output/runs/spot/discretization_*/stage_2_discretization.hdf5 --exit-after
 ```
 
 The final hexahedralization run directory holds `result.mesh` (the hex mesh,
@@ -46,8 +46,8 @@ Stage-0 tet meshes: `bob`, `bunny`, `horse`, `rockerArm`, `spot` (`.mesh`) and
 automated by:
 
 ```bash
-./cli/smoke_test.sh                  # full 4-stage run on spot.mesh
-./cli/smoke_test.sh interactive-hex-meshing/assets/tutorial/bunny.mesh   # any other tutorial mesh
+./cli_run/smoke_test.sh                  # full 4-stage run on spot.mesh
+./cli_run/smoke_test.sh interactive-hex-meshing/assets/tutorial/bunny.mesh   # any other tutorial mesh
 ```
 
 **Pass criteria (model-agnostic):**
@@ -70,7 +70,7 @@ automated by:
 ## Verifying after you modify the code
 
 1. Rebuild the binary (see [BUILD.md](BUILD.md) §A.4): `. /space/compile.sh`.
-2. Run the smoke test: `./cli/smoke_test.sh`.
+2. Run the smoke test: `./cli_run/smoke_test.sh`.
 3. Confirm it prints `PASS` and the metrics are in the expected range above.
 
 For a single stage, run just that subcommand and inspect its run directory
@@ -82,7 +82,7 @@ if the input HDF5 is missing the required field).
 `smoke_test.sh` accepts any Stage-0 tet mesh:
 
 ```bash
-./cli/smoke_test.sh path/to/your_model.mesh
+./cli_run/smoke_test.sh path/to/your_model.mesh
 ```
 
 Outputs land under `output/runs/your_model/`. The same pass criteria apply

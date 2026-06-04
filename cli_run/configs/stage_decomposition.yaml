@@ -1,13 +1,13 @@
 # Decomposition-only run (Pipeline Stage 1).
 #
 # Input must already contain a deformed_volume_mesh (post Stage 0). Either:
-#   - an HDF5 from a prior `./cli/run.sh deform ...` run, or
+#   - an HDF5 from a prior `./cli_run/run.sh deform ...` run, or
 #   - an HDF5 with deformation done interactively in the GUI.
 #
 # Produces stage_1_decomposition.hdf5 in the run directory (contains the
 # polycube cuboid list + polycube_info).
 #
-# Placeholders __INPUT_PATH__ and __RUN_DIR__ are substituted by cli/run.sh.
+# Placeholders __INPUT_PATH__ and __RUN_DIR__ are substituted by cli_run/run.sh.
 
 input:
   type: hdf5

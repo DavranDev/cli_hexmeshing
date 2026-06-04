@@ -4,15 +4,15 @@ HOW TO RUN — interactive-hex-meshing CLI (all four pipeline stages)
 
 Four subcommands are available, one per pipeline stage:
 
-    ./cli/run.sh deform         <input.mesh|input.hdf5>  [config.yaml]  [--exit-after]
-    ./cli/run.sh decompose      <input.hdf5>             [config.yaml]  [--exit-after]
-    ./cli/run.sh discretize     <input.hdf5>             [config.yaml]  [--exit-after]
-    ./cli/run.sh hexahedralize  <input.hdf5>             [config.yaml]  [--exit-after]
+    ./cli_run/run.sh deform         <input.mesh|input.hdf5>  [config.yaml]  [--exit-after]
+    ./cli_run/run.sh decompose      <input.hdf5>             [config.yaml]  [--exit-after]
+    ./cli_run/run.sh discretize     <input.hdf5>             [config.yaml]  [--exit-after]
+    ./cli_run/run.sh hexahedralize  <input.hdf5>             [config.yaml]  [--exit-after]
 
 There is no "full" subcommand. To run the whole pipeline, run the stages in
 order and feed each stage_N_*.hdf5 into the next (see "FULL CHAIN" below).
 
-If [config.yaml] is omitted, the defaults at cli/configs/stage_<cmd>.yaml are
+If [config.yaml] is omitted, the defaults at cli_run/configs/stage_<cmd>.yaml are
 used. To run with custom parameters, copy one of those YAMLs, edit the values,
 and pass your file as the 3rd argument. The script substitutes the input path
 and output run-directory automatically — you only set the parameter values.
@@ -48,12 +48,12 @@ Input may be a raw tet mesh (.mesh / .vtk) OR an HDF5 with a target_volume_mesh.
 This is the only subcommand that accepts a non-HDF5 input; the type is detected
 from the file extension. Produces stage_0_deformation.hdf5.
 
-------- WITHOUT params (defaults from cli/configs/stage_deformation.yaml)
-    ./cli/run.sh deform output/input_examples/stage_0_deformation/toy_plane.mesh
-    ./cli/run.sh deform output/input_examples/stage_0_deformation/toy_plane.mesh --exit-after
+------- WITHOUT params (defaults from cli_run/configs/stage_deformation.yaml)
+    ./cli_run/run.sh deform output/input_examples/stage_0_deformation/toy_plane.mesh
+    ./cli_run/run.sh deform output/input_examples/stage_0_deformation/toy_plane.mesh --exit-after
 
 ------- WITH params (custom YAML)
-    cp cli/configs/stage_deformation.yaml my_deform.yaml
+    cp cli_run/configs/stage_deformation.yaml my_deform.yaml
     # edit, keeping the placeholders:
 
     input:
@@ -83,15 +83,15 @@ Input must be an HDF5 with a deformed_volume_mesh (a Stage-0 output, or an HDF5
 that already has deformation done). Produces stage_1_decomposition.hdf5
 containing the optimized polycube (cuboid list + polycube_info).
 
-------- WITHOUT params (defaults from cli/configs/stage_decomposition.yaml)
-    ./cli/run.sh decompose output/runs/<example>/deformation_<date>_<NNN>/stage_0_deformation.hdf5
+------- WITHOUT params (defaults from cli_run/configs/stage_decomposition.yaml)
+    ./cli_run/run.sh decompose output/runs/<example>/deformation_<date>_<NNN>/stage_0_deformation.hdf5
 
 Tip: grab the most recent deformation run automatically:
     LATEST=$(ls -dt output/runs/<example>/deformation_*/ | head -1)
-    ./cli/run.sh decompose "${LATEST}stage_0_deformation.hdf5"
+    ./cli_run/run.sh decompose "${LATEST}stage_0_deformation.hdf5"
 
 ------- WITH params (custom YAML)
-    cp cli/configs/stage_decomposition.yaml my_decompose.yaml
+    cp cli_run/configs/stage_decomposition.yaml my_decompose.yaml
     # edit, keeping the placeholders:
 
     input:
@@ -118,11 +118,11 @@ Tip: grab the most recent deformation run automatically:
 
 Input must be an HDF5 with a polycube (post-decomposition).
 
-------- WITHOUT params (defaults from cli/configs/stage_discretization.yaml)
-    ./cli/run.sh discretize output/runs/<example>/decomposition_<date>_<NNN>/stage_1_decomposition.hdf5
+------- WITHOUT params (defaults from cli_run/configs/stage_discretization.yaml)
+    ./cli_run/run.sh discretize output/runs/<example>/decomposition_<date>_<NNN>/stage_1_decomposition.hdf5
 
 ------- WITH params (custom YAML)
-    cp cli/configs/stage_discretization.yaml my_discretize.yaml
+    cp cli_run/configs/stage_discretization.yaml my_discretize.yaml
     # edit:
 
     input:
@@ -151,10 +151,10 @@ result_metrics.yaml.
 
 ------- WITHOUT params
     LATEST=$(ls -dt output/runs/<example>/discretization_*/ | head -1)
-    ./cli/run.sh hexahedralize "${LATEST}stage_2_discretization.hdf5"
+    ./cli_run/run.sh hexahedralize "${LATEST}stage_2_discretization.hdf5"
 
 ------- WITH params (custom YAML)
-    cp cli/configs/stage_hexahedralization.yaml my_hex.yaml
+    cp cli_run/configs/stage_hexahedralization.yaml my_hex.yaml
     # edit:
 
     input:
@@ -189,10 +189,10 @@ FULL CHAIN — run all four stages on one model
 
     M=output/input_examples/stage_0_deformation/toy_plane.mesh
 
-    ./cli/run.sh deform        "$M" --exit-after
-    ./cli/run.sh decompose     output/runs/toy_plane/deformation_*/stage_0_deformation.hdf5     --exit-after
-    ./cli/run.sh discretize    output/runs/toy_plane/decomposition_*/stage_1_decomposition.hdf5 --exit-after
-    ./cli/run.sh hexahedralize output/runs/toy_plane/discretization_*/stage_2_discretization.hdf5 --exit-after
+    ./cli_run/run.sh deform        "$M" --exit-after
+    ./cli_run/run.sh decompose     output/runs/toy_plane/deformation_*/stage_0_deformation.hdf5     --exit-after
+    ./cli_run/run.sh discretize    output/runs/toy_plane/decomposition_*/stage_1_decomposition.hdf5 --exit-after
+    ./cli_run/run.sh hexahedralize output/runs/toy_plane/discretization_*/stage_2_discretization.hdf5 --exit-after
 
 The final hexahedralization run directory holds result.mesh + result_metrics.yaml.
 
@@ -207,7 +207,7 @@ COMMON OPTIONS
                     until you close it manually.
 
 To override the default parameters globally (so future runs use your tweaks
-without naming a custom YAML each time), edit the templates in cli/configs/
+without naming a custom YAML each time), edit the templates in cli_run/configs/
 directly. The placeholders __INPUT_PATH__ and __RUN_DIR__ must remain.
 
 

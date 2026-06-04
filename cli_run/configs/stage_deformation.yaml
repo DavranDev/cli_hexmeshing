@@ -7,7 +7,7 @@
 # Produces stage_0_deformation.hdf5 in the run directory.
 #
 # Placeholders __INPUT_PATH__, __INPUT_TYPE__, __RUN_DIR__ are substituted by
-# cli/run.sh based on the file extension of the input.
+# cli_run/run.sh based on the file extension of the input.
 
 input:
   type: __INPUT_TYPE__

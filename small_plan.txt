@@ -16,7 +16,7 @@ LOCAL — pushing them is the first Week-1 task (see 1B.1).
 ================================================================================
 0. WHERE WE ARE NOW (already done — the basis of the Week-1 demo)
 ================================================================================
-- CLI runner exists: `cli/run.sh <subcommand> <input> [config.yaml] [--exit-after]`,
+- CLI runner exists: `cli_run/run.sh <subcommand> <input> [config.yaml] [--exit-after]`,
   driving the `hex` binary in YAML "script" mode.
 - ALL FOUR pipeline stages run from the CLI and are validated end-to-end:
       deform (0) -> decompose (1) -> discretize (2) -> hexahedralize (3)
@@ -27,7 +27,7 @@ LOCAL — pushing them is the first Week-1 task (see 1B.1).
 - Fixed a real Stage-1 (decomposition) bug: in headless mode the optimized
   polycube was being discarded (the GUI normally writes it back each frame).
   Root-caused and fixed; output now contains the optimized polycube.
-- Docs refreshed: cli/{README,BUILD,USAGE_AND_TESTS,SOURCE_CHANGES,REPORT}.md.
+- Docs refreshed: cli_run/{README,BUILD,USAGE_AND_TESTS,SOURCE_CHANGES,REPORT}.md.
   Committed locally on `cli-runner`.
 
 Current limitation (important for the email): the tool still LAUNCHES THE GUI
@@ -61,17 +61,17 @@ It is "scripted GUI automation", not yet a true headless CLI. See Weeks 2-3.
        cli-runner (main untouched).
        pointer). Confirm a fresh `git clone --recurse-submodules` checks out the
        exact reviewed state.
-[x] 2. BUILD.md — simplified from-scratch build, DOCKER path:   (DONE: cli/BUILD.md)
+[x] 2. BUILD.md — simplified from-scratch build, DOCKER path:   (DONE: cli_run/BUILD.md)
          - clone with submodules
          - `docker build` / pull the `docker-hexmesh` image
          - `. /space/compile.sh` (or the consolidated build step)
          - sanity-run the smoke test
        Keep it copy-paste runnable; this text feeds the report.
-[x] 3. SOURCE_CHANGES.md — the change-tracking deliverable (data already in 4A):   (DONE: cli/SOURCE_CHANGES.md)
+[x] 3. SOURCE_CHANGES.md — the change-tracking deliverable (data already in 4A):   (DONE: cli_run/SOURCE_CHANGES.md)
          - list NEW files (hex/src/cli/*) vs MODIFIED original files
          - one line per modified file describing the (additive) change
          - state clearly: original model/optimizer ALGORITHMS are unchanged.
-[x] 4. USAGE_AND_TESTS.md (or fold into BUILD.md):   (DONE: cli/USAGE_AND_TESTS.md)
+[x] 4. USAGE_AND_TESTS.md (or fold into BUILD.md):   (DONE: cli_run/USAGE_AND_TESTS.md)
          - simplest one-liner per stage + the full 4-stage chain
          - the toy_plane TEST CASE with EXPECTED metrics (0 inverted, mean
            scaled-Jac ~0.80) as the pass/fail check
@@ -82,7 +82,7 @@ It is "scripted GUI automation", not yet a true headless CLI. See Weeks 2-3.
        tracked `dist/` file) + document the EXACT runtime env it needs
        (docker-hexmesh image, CUDA 12.4, libtorch version, Vulkan SDK, NVIDIA
        driver + X11 display). Note: it only runs on a matching environment.
-[x] 6. smoke_test.sh — one script that runs the 4 stages on toy_plane with   (DONE: cli/smoke_test.sh, PASS: 5826 hexes, 0 inverted)
+[x] 6. smoke_test.sh — one script that runs the 4 stages on toy_plane with   (DONE: cli_run/smoke_test.sh, PASS: 5826 hexes, 0 inverted)
        --exit-after and asserts inverted_count == 0. Makes "does it still work?"
        a single command for reviewers and for us after every edit.
 
@@ -147,7 +147,7 @@ USAGE_AND_TESTS.md + binary + smoke_test.sh + the demo.
 Both — but the original source changes are thin and additive. The whole CLI
 effort vs the pre-CLI baseline is +590 / -4 lines across 18 files.
 
-  * PARENT repo `cli/` folder = pure WRAPPER (run.sh, YAML configs, docs). No
+  * PARENT repo `cli_run/` folder = pure WRAPPER (run.sh, YAML configs, docs). No
     original CDM source there.
   * SUBMODULE (the CDM source) — NEW files (most of the new logic):
         hex/src/cli/PipelineScriptRunner.{h,cpp}   (YAML parse + per-stage dispatch)

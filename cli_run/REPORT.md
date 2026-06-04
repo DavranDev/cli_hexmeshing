@@ -26,7 +26,7 @@ Release asset.
 **Validation:** the full chain runs end-to-end on the tutorial meshes that ship
 with the CDM source (`interactive-hex-meshing/assets/tutorial/` — `bob`, `bunny`,
 `horse`, `rockerArm`, `spot`, `kitten.vtk`). The pass gate is **0 inverted
-hexes** (a hard requirement), checked automatically by `cli/smoke_test.sh`, which
+hexes** (a hard requirement), checked automatically by `cli_run/smoke_test.sh`, which
 prints `PASS`. Exact hex counts and scaled-Jacobian values are model-dependent
 and written per run to `result_metrics.yaml` — they'll be captured live on the
 demo mesh.
@@ -53,7 +53,7 @@ cd cli_hexmeshing
 . ./setup.sh          # downloads LibTorch 2.6.0+cu124 + Vulkan SDK 1.3.268.0, builds the docker-hexmesh image
 . ./run_docker.sh     # interactive shell inside the image
 . /space/compile.sh   # builds evocube + the hex binary  ->  interactive-hex-meshing/bin/Release/hex
-./cli/smoke_test.sh   # sanity-check: PASS = valid hex mesh, 0 inverted
+./cli_run/smoke_test.sh   # sanity-check: PASS = valid hex mesh, 0 inverted
 ```
 
 **(b) Native / non-Docker path — DOCUMENTED, not yet fully verified.**
@@ -74,7 +74,7 @@ build). It is on the plan with every step to be documented.
 
 ### Q2 — Make sure everything is well documented (for the report)
 
-**DONE.** The CLI ships a complete, report-grade doc set, all under `cli/`:
+**DONE.** The CLI ships a complete, report-grade doc set, all under `cli_run/`:
 
 | Doc | Purpose |
 |---|---|
@@ -97,7 +97,7 @@ Anything from these can be lifted directly into the larger report.
   *(verified live on 2026-06-02: asset `hex`, 8.40 MB, URL resolves)*
 
 Drop it into `interactive-hex-meshing/bin/Release/` and drive it with
-`cli/run.sh` (see [BUILD.md](BUILD.md) §C).
+`cli_run/run.sh` (see [BUILD.md](BUILD.md) §C).
 
 **Important — it only runs in a matching environment.** Because it's a
 dynamically linked CUDA/LibTorch/Vulkan binary, it needs:
@@ -115,26 +115,26 @@ If it differs at all, build from source (Q1) — that's the robust path.
 
 **Simplest usage** — one subcommand per stage, file in → run directory out:
 ```bash
-./cli/run.sh deform         <input.mesh|.hdf5>  --exit-after   # Stage 0
-./cli/run.sh decompose      <stage_0.hdf5>      --exit-after   # Stage 1
-./cli/run.sh discretize     <stage_1.hdf5>      --exit-after   # Stage 2
-./cli/run.sh hexahedralize  <stage_2.hdf5>      --exit-after   # Stage 3
+./cli_run/run.sh deform         <input.mesh|.hdf5>  --exit-after   # Stage 0
+./cli_run/run.sh decompose      <stage_0.hdf5>      --exit-after   # Stage 1
+./cli_run/run.sh discretize     <stage_1.hdf5>      --exit-after   # Stage 2
+./cli_run/run.sh hexahedralize  <stage_2.hdf5>      --exit-after   # Stage 3
 ```
 
 **Full chain on a tutorial mesh:**
 ```bash
 M=interactive-hex-meshing/assets/tutorial/spot.mesh
-./cli/run.sh deform        "$M" --exit-after
-./cli/run.sh decompose     output/runs/spot/deformation_*/stage_0_deformation.hdf5     --exit-after
-./cli/run.sh discretize    output/runs/spot/decomposition_*/stage_1_decomposition.hdf5 --exit-after
-./cli/run.sh hexahedralize output/runs/spot/discretization_*/stage_2_discretization.hdf5 --exit-after
+./cli_run/run.sh deform        "$M" --exit-after
+./cli_run/run.sh decompose     output/runs/spot/deformation_*/stage_0_deformation.hdf5     --exit-after
+./cli_run/run.sh discretize    output/runs/spot/decomposition_*/stage_1_decomposition.hdf5 --exit-after
+./cli_run/run.sh hexahedralize output/runs/spot/discretization_*/stage_2_discretization.hdf5 --exit-after
 ```
 Inputs ship in `interactive-hex-meshing/assets/tutorial/` (`bob`, `bunny`,
 `horse`, `rockerArm`, `spot`, `kitten.vtk`).
 
 **The test case — pass/fail criteria.** Run everything in one command:
 ```bash
-./cli/smoke_test.sh        # PASS = valid hex mesh, 0 inverted (defaults to spot.mesh)
+./cli_run/smoke_test.sh        # PASS = valid hex mesh, 0 inverted (defaults to spot.mesh)
 ```
 
 | Check | Expected |
@@ -152,11 +152,11 @@ demo.
 
 **How to verify after you modify the code** — the same loop every time:
 1. Rebuild: `. /space/compile.sh` (inside the container).
-2. Run the smoke test: `./cli/smoke_test.sh`.
+2. Run the smoke test: `./cli_run/smoke_test.sh`.
 3. Confirm it prints `PASS` (`inverted_count == 0`, `total_hexes > 0`).
 
 `smoke_test.sh` also accepts any other Stage-0 tet mesh
-(`./cli/smoke_test.sh interactive-hex-meshing/assets/tutorial/bunny.mesh`); the
+(`./cli_run/smoke_test.sh interactive-hex-meshing/assets/tutorial/bunny.mesh`); the
 0-inverted gate still applies.
 
 ### Q5 — Did Claude modify the original CDM source? If so, track every change; keep it under Git
@@ -172,7 +172,7 @@ already call. The whole CLI effort vs. the pre-CLI baseline (`d0a904a`) is
 `git -C interactive-hex-meshing diff --stat d0a904a..HEAD`.
 
 **Two repos, two kinds of change:**
-- **Parent repo (`cli_hexmeshing`)** — *pure addition*: a new `cli/` folder
+- **Parent repo (`cli_hexmeshing`)** — *pure addition*: a new `cli_run/` folder
   (`run.sh`, YAML configs, docs, `smoke_test.sh`). No original host script
   (Docker/build) was rewritten. (`compile.sh` got a 5-line robustness tweak only:
   `mkdir -p build`, export `Torch_DIR` directly, pass `-DTorch_DIR` to cmake —
@@ -255,6 +255,6 @@ effort; Stage 2 discretization is the strongest CPU-only candidate).
   Vulkan 1.3.268.0 environment — see [BUILD.md](BUILD.md) §C).
 - **Docs:** [BUILD.md](BUILD.md) · [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md) ·
   [SOURCE_CHANGES.md](SOURCE_CHANGES.md) · [README.md](README.md).
-- **One-command verify:** `./cli/smoke_test.sh` → `PASS`.
+- **One-command verify:** `./cli_run/smoke_test.sh` → `PASS`.
 - **Forward plan:** `small_plan.txt` (Weeks 1–3, with a coverage check that every
   email item is scheduled).

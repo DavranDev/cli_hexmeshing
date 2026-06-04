@@ -3,7 +3,7 @@
 # Input HDF5 must already contain a polycube (post-decomposition state).
 # Produces stage_2_discretization.hdf5 in the run directory.
 #
-# Placeholders __INPUT_PATH__ and __RUN_DIR__ are substituted by cli/run.sh.
+# Placeholders __INPUT_PATH__ and __RUN_DIR__ are substituted by cli_run/run.sh.
 
 input:
   type: hdf5
