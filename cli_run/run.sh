@@ -173,36 +173,53 @@ echo "[run.sh] subcommand:   $SUBCOMMAND"
 echo "[run.sh] input:        $INPUT_HOST"
 echo "[run.sh] config:       $CONFIG_TEMPLATE"
 echo "[run.sh] run dir:      $HOST_RUN_DIR"
-echo "[run.sh] launching docker..."
+if [[ -n "${HEX_LOCAL:-}" ]]; then
+  echo "[run.sh] running hex directly (HEX_LOCAL=1, in-container/native)..."
+else
+  echo "[run.sh] launching docker..."
+fi
 
 xhost +local:root >/dev/null 2>&1 || true
 
 CONTAINER_CONFIG="${CONTAINER_RUN_DIR}/run_config.yaml"
 LOG_FILE="$HOST_RUN_DIR/log.txt"
 
-docker run \
-  --runtime=nvidia \
-  --gpus all \
-  --rm \
-  --name "hexmesh-${RUN_ID}" \
-  --env="DISPLAY=$DISPLAY" \
-  --env="NVIDIA_DRIVER_CAPABILITIES=all" \
-  --env="VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json" \
-  -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-  -v /usr/share/vulkan:/usr/share/vulkan:ro \
-  -v "$REPO_ROOT/lib:/space/lib" \
-  -v "$REPO_ROOT/evocube:/space/evocube" \
-  -v "$REPO_ROOT/interactive-hex-meshing:/space/interactive-hex-meshing" \
-  -v "$REPO_ROOT/compile.sh:/space/compile.sh" \
-  -v "$REPO_ROOT/data:/space/data" \
-  -v "$REPO_ROOT/output:/space/output" \
-  -v "$REPO_ROOT/cli_run:/space/cli_run" \
-  docker-hexmesh \
-  bash -c "source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh \
-           && cd /space/interactive-hex-meshing/bin/Release \
-           && ./hex --script ${CONTAINER_CONFIG} ${EXIT_AFTER}" \
-  2>&1 | tee "$LOG_FILE"
-
-STATUS=${PIPESTATUS[0]}
+if [[ -n "${HEX_LOCAL:-}" ]]; then
+  # In-container (self-contained image, e.g. hexmesh-cli:week2) or native path:
+  # run the hex binary DIRECTLY, no nested docker. The image is laid out at
+  # /space exactly like the docker mounts below, so the /space/... paths that
+  # were rendered into run_config.yaml are valid here. Vulkan env comes from
+  # setup-env.sh; the libtorch lib dir is already on LD_LIBRARY_PATH in the
+  # image (Dockerfile.build), so re-sourcing is harmless.
+  # shellcheck disable=SC1091
+  source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh >/dev/null 2>&1 || true
+  ( cd /space/interactive-hex-meshing/bin/Release \
+      && ./hex --script "$CONTAINER_CONFIG" $EXIT_AFTER ) 2>&1 | tee "$LOG_FILE"
+  STATUS=${PIPESTATUS[0]}
+else
+  docker run \
+    --runtime=nvidia \
+    --gpus all \
+    --rm \
+    --name "hexmesh-${RUN_ID}" \
+    --env="DISPLAY=$DISPLAY" \
+    --env="NVIDIA_DRIVER_CAPABILITIES=all" \
+    --env="VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json" \
+    -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+    -v /usr/share/vulkan:/usr/share/vulkan:ro \
+    -v "$REPO_ROOT/lib:/space/lib" \
+    -v "$REPO_ROOT/evocube:/space/evocube" \
+    -v "$REPO_ROOT/interactive-hex-meshing:/space/interactive-hex-meshing" \
+    -v "$REPO_ROOT/compile.sh:/space/compile.sh" \
+    -v "$REPO_ROOT/data:/space/data" \
+    -v "$REPO_ROOT/output:/space/output" \
+    -v "$REPO_ROOT/cli_run:/space/cli_run" \
+    docker-hexmesh \
+    bash -c "source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh \
+             && cd /space/interactive-hex-meshing/bin/Release \
+             && ./hex --script ${CONTAINER_CONFIG} ${EXIT_AFTER}" \
+    2>&1 | tee "$LOG_FILE"
+  STATUS=${PIPESTATUS[0]}
+fi
 echo "[run.sh] done. run dir: $HOST_RUN_DIR  (exit=$STATUS)"
 exit "$STATUS"

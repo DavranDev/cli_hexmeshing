@@ -1,0 +1,48 @@
+# .dockerignore for Dockerfile.build
+# ----------------------------------------------------------------------------
+# Goal: keep the build context to (source tree + the two library archives) so it
+# stays a few GB, not 10+ GB. The Dockerfile.build COPYs only:
+#   - libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip  (LibTorch)
+#   - vulkansdk.tar.xz                                       (Vulkan SDK)
+#   - evocube/  interactive-hex-meshing/  compile.sh  cli_run/
+# Anything not on that list is excluded below. (See T1.1/T1.2 in week2_plan.txt.)
+
+# --- VCS / editor / agent noise ---
+.git
+**/.git
+.gitignore
+.gitmodules
+.github/
+.vscode/
+.claude/
+.codex
+
+# --- SECURITY: never let the GitHub token enter a build layer ---
+github_token.txt
+
+# --- Big extracted trees the image rebuilds itself; do NOT ship them raw ---
+lib/                       # 5.9G of already-extracted libtorch + vulkan; the
+                           # image re-extracts these from the two archives below
+1.4.341.1/                 # stray extracted Vulkan SDK at the repo root (1.6G)
+output/                    # runtime pipeline outputs (mounted at run time)
+
+# --- CMake build trees + the prebuilt host binary; the image compiles fresh ---
+**/build
+interactive-hex-meshing/bin/
+
+# --- Host-only helpers not needed inside the image ---
+run_docker.sh
+run_docker.txt
+install_docker.sh
+setup.sh
+Dockerfile.build
+.dockerignore
+
+# --- Archives: keep ONLY the two the build COPYs; drop any other zip/tarball ---
+# (vulkansdk.tar.xz at the repo root is the WRONG Vulkan version, 1.4.341.1, and
+#  is intentionally excluded; the build uses the proven vulkan-sdk-1.3.268.0.tar.xz
+#  repackaged from lib/vulkan-sdk-1.3.268.0.)
+*.zip
+!libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
+*.tar.xz
+!vulkan-sdk-1.3.268.0.tar.xz
