@@ -93,6 +93,11 @@ USAGE_AND_TESTS.md + binary + smoke_test.sh + the demo.
 ================================================================================
 2. WEEK 2  (reproducible builds + headless investigation)
 ================================================================================
+STATUS (anchored to this week, Mon 2026-06-08 .. Fri 2026-06-12; spill ok per
+Ronald's email). Active on branch `cli-runner`. Detailed step-by-step breakdown
+lives in `week2_plan.txt` (T1 Dockerfile, T2 headless memo, T3 dependency map,
+T4 native build). In progress: T1 self-contained Dockerfile (item 1 below).
+
 [ ] 1. SELF-CONTAINED DOCKERFILE that builds the UPDATED source end-to-end.
        Today the flow is: prebuilt `docker-hexmesh` image + host source mounted +
        compile.sh. Goal: a single Dockerfile that COPYs/clones the updated source,

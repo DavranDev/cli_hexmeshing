@@ -1,6 +1,12 @@
 *.tar.xz
 *.zip
 
+# Secrets: never commit the GitHub token. It lives outside the repo
+# (moved to ~/.config/cli_hexmeshing/github_token.txt); this guard makes
+# sure a stray copy in the working tree can never be staged or end up in
+# a docker build context.
+github_token.txt
+
 .vscode/
 .claude/
 .codex
