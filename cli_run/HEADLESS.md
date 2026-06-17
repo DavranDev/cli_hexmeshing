@@ -17,10 +17,10 @@ it is a memo and not a prototype are at the end (§7).
   display* are used **only** to show the GUI. *(C) CUDA / libtorch + geomlib
   kernels* do the actual pipeline math. A headless mode removes (V); it does
   **not** touch (C). (CPU-only — removing (C) — is the separate Week-3 question.)
-- **What works on a headless server TODAY:** `xvfb-run ./cli_run/smoke_test.sh`.
-  The `xvfb` experiment (§5) confirmed the **window/X11 step succeeds against a
-  virtual display** with zero code changes. On a host with an NVIDIA GPU this is
-  a working stopgap right now.
+- **What works on a headless server TODAY (verified):** `xvfb-run ./cli_run/smoke_test.sh`
+  ran the full pipeline with no `DISPLAY` at all and printed **PASS — 18 526 hexes,
+  0 inverted** on a GPU host (RTX 4090, 2026-06-17; §5). Zero code changes — the
+  design-C stopgap is real right now.
 - **The compute path does not need the Vulkan device.** The optimizers are
   libtorch/CUDA and are independent of vkoo's Vulkan device. The Vulkan device is
   needed only by the **view objects** (their construction + vertex-buffer
@@ -147,12 +147,13 @@ Aborted (core dumped)            # exit 134
   dependency, *not* the display dependency. (The Vulkan loader + SDK validation
   layers are present — hence the `Validation layer:` prefix — only the driver ICD
   is missing.)
-- **On a host with an NVIDIA GPU**, `run.sh` already mounts the ICD
-  (`-v /usr/share/vulkan`, `VK_ICD_FILENAMES=.../nvidia_icd.json`), so this step
-  passes and the pipeline proceeds under Xvfb. **Predicted result there:
-  `xvfb-run ./cli_run/smoke_test.sh` → PASS, 0 inverted** — i.e. headless-server
-  capable today via a virtual display. *(This prediction is unverified here for
-  lack of a GPU driver; verify on a GPU host — see §7.)*
+- **On a host with an NVIDIA GPU this is now VERIFIED.** With the driver present
+  and `NVIDIA_DRIVER_CAPABILITIES=all` (the container toolkit injects the ICD —
+  do *not* bind-mount the host `/usr/share/vulkan`), `xvfb-run ./cli_run/smoke_test.sh`
+  ran the whole pipeline with **no `DISPLAY` and no X socket** and printed
+  **PASS — 18 526 hexes, 0 inverted** (RTX 4090, driver 580.159.03, 2026-06-17).
+  So headless-server operation via a virtual display works **today**, zero code
+  changes — exactly the design-C stopgap.
 
 So Xvfb cleanly resolves (V-display); the only thing it still requires is
 (V-Vulkan/GPU), which is the same GPU the math needs anyway.
@@ -202,7 +203,8 @@ gate it on the smoke-test metric diff (must match the GUI run), (4) fold design
 **A** into the CPU-only feasibility work.
 
 ## 8. Validation checklist (when a GPU host is available)
-- [ ] `xvfb-run ./cli_run/smoke_test.sh` → `PASS, 0 inverted` (confirms §5 / design C).
+- [x] `xvfb-run ./cli_run/smoke_test.sh` → `PASS, 0 inverted` (confirms §5 / design C).
+      **Done 2026-06-17 (RTX 4090): PASS, 18 526 hexes, 0 inverted.**
 - [ ] `--headless` (design B) smoke test → **same** `total_hexes` and `inverted_count: 0`
       as the GUI `--exit-after` run on `spot.mesh` (and `toy_plane`).
 - [ ] `ldd` / runtime: headless binary needs the Vulkan ICD but **no** `DISPLAY`.

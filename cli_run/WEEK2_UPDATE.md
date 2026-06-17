@@ -5,11 +5,15 @@ the CDM submodule is **unchanged this week**) · Follows the Week-1
 [REPORT.md](REPORT.md).
 
 This update is organized as **the four Week-2 deliverables (T1–T4)**, then what
-rolls to Week 3. Every claim was verified on the date above on the dev host. One
-environment caveat applies throughout: **this dev box has no working NVIDIA
-driver**, so anything that needs the GPU *at run time* (the full smoke test, the
-per-stage `nvidia-smi` evidence) is validated **as far as the GPU boundary** and
-explicitly marked "pending a GPU host" — never claimed as passing.
+rolls to Week 3.
+
+> **GPU validation (added 2026-06-17):** the dev box now has a working NVIDIA driver
+> (RTX 4090, 580.159.03), so the GPU run-tests that were pending are **done**: the
+> self-contained image's full smoke test **PASSES — 18 526 hexes, 0 inverted**, the
+> `xvfb` headless run PASSES with no display, and per-stage GPU utilization was
+> measured (deform 76% / decompose 57% / discretize 28% / hexahedralize 68%). Running
+> the test also surfaced and fixed a real shell bug in `run.sh`'s in-container path
+> (a `set -u` trip on the Vulkan `setup-env.sh`).
 
 ---
 
@@ -28,24 +32,24 @@ algorithm was touched** (the submodule has zero source changes this week).
 
 ## 2. The four deliverables
 
-### T1 — Self-contained Dockerfile  ✅ built & verified (GPU smoke pending a GPU host)
+### T1 — Self-contained Dockerfile  ✅ built & smoke-verified on GPU
 
 A new `Dockerfile.build` (+ `.dockerignore`) compiles evocube + `hex` *inside* the
 image from the checked-out source. A reviewer needs **two commands**, never
 touching `compile.sh`:
 ```bash
 docker build -f Dockerfile.build -t hexmesh-cli:week2 .
-docker run --runtime=nvidia --gpus all --rm -e DISPLAY -e HEX_LOCAL=1 \
-  -v /tmp/.X11-unix:/tmp/.X11-unix:rw -v /usr/share/vulkan:/usr/share/vulkan:ro \
-  -v "$(pwd)/output:/space/output" \
+docker run --runtime=nvidia --gpus all --rm \
+  -e DISPLAY=$DISPLAY -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:rw -v "$(pwd)/output:/space/output" \
   hexmesh-cli:week2 ./cli_run/smoke_test.sh        # PASS = 0 inverted
 ```
-- **Built here:** ~5 min, ~26 GB image; `ldd hex` resolves cleanly; `hex --help`
-  runs; the in-container runner (`HEX_LOCAL=1`, an additive branch in `run.sh` —
-  default docker behavior unchanged) renders configs and execs `hex` directly.
+- **Built + verified:** ~5 min, ~26 GB image; `ldd hex` clean; the full smoke test
+  **PASSES on the RTX 4090 — 18 526 hexes, 0 inverted** (both with X11 and via `xvfb`).
+  The in-container runner is `HEX_LOCAL=1`, an additive branch in `run.sh` (default
+  docker behavior unchanged) that renders configs and execs `hex` directly.
 - **GPU is build-free, run-bound:** the build needs no GPU (`nvcc` cross-compiles);
-  a GPU + Vulkan + X11 are needed only at `docker run`. The full smoke test is
-  **predicted PASS on a GPU host** — not run here (no driver).
+  a GPU + Vulkan are needed only at `docker run`.
 - **Verified-fix found:** the repo's `vulkansdk.tar.xz` is the **wrong Vulkan
   version (1.4.341.1)**; the build uses the proven **1.3.268.0**.
 - Details: [BUILD.md](BUILD.md) §A2 (baked-in vs mounted, the two-stage slimming
@@ -59,10 +63,11 @@ startup change, not a logic rewrite**.
   does real work" (class b) was the **already-fixed** Stage-1 polycube writeback;
   the Discretization `pending_view_` block the plan flagged is **mouse-only** (never
   runs headless). Compute is libtorch/CUDA, independent of the Vulkan device.
-- **xvfb result:** under `xvfb-run`, window/X11 creation **succeeds**; the run then
-  stops at `vkCreateInstance: Found no drivers!` — i.e. the missing GPU/Vulkan ICD
-  here, *not* a display problem. So Xvfb cleanly covers the display half; on a GPU
-  host `xvfb-run ./cli_run/smoke_test.sh` is the predicted stopgap.
+- **xvfb result (verified on GPU 2026-06-17):** `xvfb-run ./cli_run/smoke_test.sh`
+  with **no `DISPLAY`** runs the whole pipeline → **PASS, 18 526 hexes, 0 inverted**.
+  So the headless-via-virtual-display stopgap (design C) works **today**, zero code
+  changes. (Before the driver was installed it stopped at `vkCreateInstance: Found no
+  drivers!` — confirming Xvfb covers the *display* half and only the GPU/ICD was missing.)
 - **Effort:** C `xvfb-run` (0 LOC, now) → B surfaceless-Vulkan `--headless`
   (~4–5 startup files, stages untouched, ~2–3 days) → A no-Vulkan CUDA-only
   (~6–8 files, ~1–1.5 wks, fold into CPU-only work).
@@ -82,7 +87,9 @@ startup change, not a logic rewrite**.
 - **Crux:** ~40 hard-coded libtorch `.cuda()` (mechanical to move; no device knob
   today) vs. 2 `.cu` kernels (the real gate). Fact-check: `kCUDA`/`.cuda()` lives in
   **5** hex/src files, not 6 (`torch_utils.cpp` is CPU helpers). Per-stage
-  `nvidia-smi` runtime evidence is marked **pending W3** (needs a GPU).
+  `nvidia-smi` runtime evidence (measured 2026-06-17) corroborates the split — peak
+  GPU util **deform 76% / decompose 57% / hexahedralize 68%** vs **discretize 28%**
+  (the CPU-compute outlier).
 
 ### T4 — Native (non-Docker) build  ✅ compile-verified (runtime needs a driver)
 
@@ -103,9 +110,9 @@ on a clean `ubuntu:22.04` container (2026-06-16)** — evocube and `hex` both bu
 
 | Item | Why it's Week 3 |
 |---|---|
-| **Run-validate T1/T2/T4 on a GPU host** | the full smoke test (0 inverted), the `xvfb-run` PASS, and a native pipeline *run* all need an NVIDIA driver this dev box lacks |
+| ~~Run-validate T1/T2 on a GPU host~~ **DONE 2026-06-17** | Docker smoke (X11 + `xvfb`) PASS, 18 526 hexes / 0 inverted; per-stage GPU util measured. *(Only the bare-metal native-binary run on GPU is still unexercised — same binary, lower priority.)* |
 | **True headless impl** | prototype design B (`--headless`, surfaceless Vulkan) and gate it on the smoke-test metric diff |
-| **Dependency map part 2** | per-stage `nvidia-smi` runtime evidence; scope the device-knob refactor + the two kernel ports |
+| **Dependency map part 2** | ~~per-stage runtime evidence~~ (done); scope the device-knob refactor + the two kernel ports |
 | **CPU-only feasibility** | Stage 2 first (CPU-now), then cost the libtorch knob (Stage 0) and the geomlib kernel ports (Stages 1 & 3) |
 | **Two-stage image slimming** | shrink the 26 GB image once a GPU host can validate the slim runtime stage |
 | **Consolidated report** | fold Week-1 + Week-2 docs into one report-ready document |

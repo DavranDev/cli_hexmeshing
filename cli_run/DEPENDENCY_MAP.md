@@ -72,17 +72,26 @@ A CPU pipeline must port (B) (or route around it); (A) is comparatively easy.
 
 | Stage | CUDA touches (`file:line`) | Vulkan (V) | Runtime GPU evidence | CPU-only verdict |
 |---|---|---|---|---|
-| **0 deform** | libtorch only: `CubicVolumetricDeformer.cpp:19-56` (8× `.cuda()`). **No geomlib kernel, no SDF.** | display-only (views) | `pending W3` | **cheap** — libtorch device knob; no kernel |
-| **1 decompose** | `TetrahedralMesh.cpp:156-158` `PointTetMeshTest` **(kernel B)** via `CreateDistanceField`→`ComputeDistanceFieldGPU`; re-called in opt loop `PolycubeOptimizer.cpp:285,342`. + libtorch `CreateAnchors` `TetrahedralMesh.cpp:92,106,108`, `PolycubeOptimizer.cpp:23,106,238` | display-only (views) | `pending W3` | **kernel-port-needed** — SDF kernel is CUDA-only & on the hot path |
-| **2 discretize** | **none** (direct or transitive — §5) | display-only (views) | `pending W3` (expect **GPU-idle**) | **now** — combinatorial; strongest CPU candidate |
-| **3 hexahedralize** | `HexComplexDeformer.cpp:101` `GeneralizedTriangleProjection` **(kernel B)** + 15× `.cuda()`; `HexahedralizationStage.cpp:592` `GeneralizedTetrahedronProjection` (pullback); `:544` `ComputeHausdorffDistance` (CUDA-only metric), `:534-542,594-596` `.cuda()` | display-only (views) | `pending W3` | **kernel-port-needed** — projection kernel is CUDA-only |
+| **0 deform** | libtorch only: `CubicVolumetricDeformer.cpp:19-56` (8× `.cuda()`). **No geomlib kernel, no SDF.** | display-only (views) | **76% peak util — active** | **cheap** — libtorch device knob; no kernel |
+| **1 decompose** | `TetrahedralMesh.cpp:156-158` `PointTetMeshTest` **(kernel B)** via `CreateDistanceField`→`ComputeDistanceFieldGPU`; re-called in opt loop `PolycubeOptimizer.cpp:285,342`. + libtorch `CreateAnchors` `TetrahedralMesh.cpp:92,106,108`, `PolycubeOptimizer.cpp:23,106,238` | display-only (views) | **57% peak util — active** | **kernel-port-needed** — SDF kernel is CUDA-only & on the hot path |
+| **2 discretize** | **none** (direct or transitive — §5) | display-only (views) | **28% peak util — lowest, no CUDA compute** | **now** — combinatorial; strongest CPU candidate |
+| **3 hexahedralize** | `HexComplexDeformer.cpp:101` `GeneralizedTriangleProjection` **(kernel B)** + 15× `.cuda()`; `HexahedralizationStage.cpp:592` `GeneralizedTetrahedronProjection` (pullback); `:544` `ComputeHausdorffDistance` (CUDA-only metric), `:534-542,594-596` `.cuda()` | display-only (views) | **68% peak util — active** | **kernel-port-needed** — projection kernel is CUDA-only |
 | *shared* | `models/TetrahedralMesh.cpp` (anchors + SDF, used by stage 1); `optim/torch_utils.cpp` = **CPU** tensor helpers (not CUDA) | — | — | — |
 
 Vulkan column is identical for all stages by design — the renderer is display-only
-(full call-site classification in [HEADLESS.md](HEADLESS.md) §4). Runtime evidence
-is `pending W3` everywhere because this dev host has **no working NVIDIA driver**
-(`nvidia-smi` fails; a build-time check is fine, runtime GPU polling is not). The
-§3.2 procedure to fill it is preserved in §6.
+(full call-site classification in [HEADLESS.md](HEADLESS.md) §4).
+
+**Runtime evidence (measured 2026-06-17, RTX 4090 + driver 580.159.03).** Each stage
+was run on `spot.mesh` while polling `nvidia-smi --query-gpu=utilization.gpu`. Peak
+GPU utilization corroborates the static map: **deform 76%, decompose 57%,
+hexahedralize 68%** (clearly CUDA-active) vs **discretize 28%** — the lowest by far,
+consistent with *no CUDA compute* (its residual GPU use is the libtorch CUDA context
+that every `hex` process loads at startup, plus the Vulkan window). Caveat: peak
+*memory* does **not** discriminate (~1.1–1.9 GB for every stage, because that
+libtorch context + Vulkan load regardless), and the GPU is shared with the desktop
+(138 MiB idle) and the optimizers are stochastic — so utilization is the signal and
+values are indicative, not exact. The full pipeline also passes end-to-end on this
+GPU (smoke test: **18 526 hexes, 0 inverted**).
 
 ---
 
@@ -128,9 +137,9 @@ Stage 0 with a device knob, and a costed kernel-port for 1 & 3* — exactly the 
 to tackle it.
 
 **Pending Week 3 (part 2):**
-- **Runtime evidence (§3.2)** on a GPU host — run each stage on `spot.mesh` while
-  polling `nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv -l 1`;
-  fill the table's runtime column (expected: stage 2 GPU-idle, stages 0/1/3 active).
+- ~~Runtime evidence (§3.2)~~ **DONE 2026-06-17** — per-stage GPU utilization measured
+  on an RTX 4090 (table above); it corroborates the static map (stage 2 clearly the
+  lowest). Full pipeline passes on GPU (18 526 hexes, 0 inverted).
 - Confirm the libtorch device-knob scope (count + route the ~40 `.cuda()` calls).
 - Scope/estimate the CPU port (or CPU fallback) for the two geomlib kernels — the
   actual gate on a full CPU-only pipeline; ties into [HEADLESS.md](HEADLESS.md)

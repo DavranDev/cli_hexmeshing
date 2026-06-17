@@ -125,26 +125,44 @@ docker build -f Dockerfile.build -t hexmesh-cli:week2 .
 - Image size: **~26 GB** (`docker images hexmesh-cli:week2`). Large because it is
   built from the CUDA *devel* base + LibTorch + Vulkan SDK; see A2.6 for slimming.
 
-### A2.3 Run the smoke test (GPU + X11 needed only here, at run time)
+### A2.3 Run the smoke test (GPU needed only here, at run time)
+On a host with an NVIDIA driver + GPU. Allow the container to reach your X server,
+then run:
 ```bash
+xhost +local:root                                  # let the container use $DISPLAY
 docker run --runtime=nvidia --gpus all --rm \
-  -e DISPLAY -e HEX_LOCAL=1 \
+  -e DISPLAY=$DISPLAY -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
   -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-  -v /usr/share/vulkan:/usr/share/vulkan:ro \
   -v "$(pwd)/output:/space/output" \
   hexmesh-cli:week2 ./cli_run/smoke_test.sh         # PASS = valid hex mesh, 0 inverted
 ```
-`HEX_LOCAL=1` tells `cli_run/run.sh` to run the `hex` binary **directly** inside
-the container instead of launching another docker container (its default,
+`NVIDIA_DRIVER_CAPABILITIES=all` makes the NVIDIA Container Toolkit inject the
+Vulkan ICD + GL libs into the container — **do not** also bind-mount the host
+`/usr/share/vulkan` (it drags in host-only implicit layers the container lacks and
+the run aborts). `HEX_LOCAL=1` tells `cli_run/run.sh` to run `hex` **directly**
+inside the container instead of launching another docker container (its default
 host-side behavior — see A.5 — is unchanged). The image is laid out at `/space`
 exactly like the A.5 mounts, so the paths the runner writes into its YAML resolve
-correctly. Drop `./cli_run/smoke_test.sh` to get an interactive shell instead.
+correctly. Drop `./cli_run/smoke_test.sh` for an interactive shell.
+
+**No display? Run headless on a virtual one** (no `DISPLAY`, no X mount):
+```bash
+docker run --runtime=nvidia --gpus all --rm \
+  -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
+  -v "$(pwd)/output:/space/output" hexmesh-cli:week2 \
+  bash -lc 'apt-get update -qq && apt-get install -y -qq xvfb && \
+            xvfb-run -a -s "-screen 0 1280x720x24" ./cli_run/smoke_test.sh'
+```
+
+> **Verified 2026-06-17 (RTX 4090, driver 580.159.03, CUDA 12.4 image):** both the
+> X11 and the `xvfb` runs print `PASS` on `spot.mesh` — **18 526 hexes, 0 inverted**,
+> scaled-Jacobian min 0.024 / mean 0.86 / max 0.9998.
 
 To run a single stage the same way:
 ```bash
-docker run --runtime=nvidia --gpus all --rm -e DISPLAY -e HEX_LOCAL=1 \
-  -v /tmp/.X11-unix:/tmp/.X11-unix:rw -v /usr/share/vulkan:/usr/share/vulkan:ro \
-  -v "$(pwd)/output:/space/output" \
+docker run --runtime=nvidia --gpus all --rm \
+  -e DISPLAY=$DISPLAY -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:rw -v "$(pwd)/output:/space/output" \
   hexmesh-cli:week2 \
   ./cli_run/run.sh deform interactive-hex-meshing/assets/tutorial/spot.mesh --exit-after
 ```
