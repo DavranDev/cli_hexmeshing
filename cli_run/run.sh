@@ -192,7 +192,13 @@ if [[ -n "${HEX_LOCAL:-}" ]]; then
   # setup-env.sh; the libtorch lib dir is already on LD_LIBRARY_PATH in the
   # image (Dockerfile.build), so re-sourcing is harmless.
   # shellcheck disable=SC1091
+  # setup-env.sh references $VK_LAYER_PATH unguarded, which trips this script's
+  # `set -u`; disable nounset just around the source (the proven docker path
+  # below sources it in a fresh `bash -c` that has no `set -u`, so it's only an
+  # issue on this in-process path).
+  set +u
   source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh >/dev/null 2>&1 || true
+  set -u
   ( cd /space/interactive-hex-meshing/bin/Release \
       && ./hex --script "$CONTAINER_CONFIG" $EXIT_AFTER ) 2>&1 | tee "$LOG_FILE"
   STATUS=${PIPESTATUS[0]}
