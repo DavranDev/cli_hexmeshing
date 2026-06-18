@@ -180,13 +180,39 @@ only at `docker run` time** — the tool still opens a Vulkan window today (see 
 GUI note at the bottom). A true headless mode is tracked separately
 (`cli_run/HEADLESS.md`, in progress).
 
-### A2.6 Two-stage runtime slimming (next step, not yet shipped)
-The current image is built from the CUDA **devel** base (the proven environment)
-so it is large. Splitting it into a `builder` stage + a slim `runtime` stage
-(CUDA **runtime** base, copying only the binaries + runtime `.so`s + assets) is a
-documented follow-up: it needs the full GPU+X11 smoke test to validate that no
-runtime library was dropped, so it is intentionally deferred rather than shipped
-unverified.
+### A2.6 Two-stage runtime slimming (SHIPPED — validated 2026-06-18)
+`Dockerfile.build` is now multi-stage with two selectable targets:
+
+| Target | Base | Size | Use |
+|---|---|---|---|
+| `build` (devel, self-contained) | `cuda:12.4.1-cudnn-devel` | **26.1 GB** | full env: compilers, source, GUI |
+| `runtime` (slim) | `cuda:12.4.1-cudnn-runtime` | **15.2 GB** | run-only: binaries + runtime `.so`s + assets |
+
+```bash
+docker build -f Dockerfile.build --target build   -t hexmesh-cli .        # devel
+docker build -f Dockerfile.build --target runtime  -t hexmesh-cli:slim .   # slim (default target)
+```
+
+The `runtime` stage drops the CUDA **devel** base, the compilers (`nvcc`,
+build-essential, cmake), the source tree, the CMake build trees, and the LibTorch
+headers/static libs — keeping only the compiled `hex`/evocube binaries, the
+LibTorch + Vulkan-SDK runtime `.so`s, the assets/shaders, and `cli_run/`. Net
+**−10.9 GB (~42%)**.
+
+**Validated:** `ldd hex` clean; headless smoke **PASS — 18 526 hexes, 0 inverted**
+on the RTX 4090, out of the box:
+```bash
+docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all \
+  hexmesh-cli:slim bash -c 'HEX_LOCAL=1 SMOKE_HEADLESS=1 ./cli_run/smoke_test.sh'
+```
+
+**Vulkan note (important):** the slim runtime base omits the full NVIDIA GL/Vulkan
+stack, so the toolkit-injected NVIDIA Vulkan ICD (`libGLX_nvidia.so.0`) can't drive
+the off-screen *view* device there. The slim image therefore bundles **lavapipe**
+(Mesa's CPU Vulkan ICD) and defaults `VK_ICD_FILENAMES` to it: the view device runs
+in software while **CUDA compute still runs on the NVIDIA GPU** (`--gpus all`). This
+is fine for headless/CLI use. For on-screen **GUI** rendering on the GPU, use the
+**devel** image (`--target build`), which carries the full stack.
 
 ---
 
@@ -270,22 +296,37 @@ its size matches the Docker build's. CUDA toolkit install took ~4 min.
 
 ## C. Running the prebuilt binary (no compilation)
 
-A prebuilt `hex` is published as a GitHub Release asset on the fork. It runs
-**only** in a matching environment:
+A prebuilt `hex` (Week-3 build, **with `--headless`**) is delivered two ways:
 
+1. **Docker image (recommended, portable):** `hexmesh-cli:week3` (devel) or
+   `hexmesh-cli:week3-slim` (15.2 GB — see §A2.6). Nothing to install but the
+   NVIDIA driver + container toolkit; run with `--gpus all`.
+2. **Bare binary:** published as a GitHub Release asset on the fork (mirroring W1's
+   `cli-runner-v1`). The exact sha256 + provenance + env are in `dist/MANIFEST.md`.
+
+The bare binary runs **only** in a matching environment:
 - the `docker-hexmesh` image (or a host with the same libraries),
 - NVIDIA driver supporting CUDA 12.4, LibTorch 2.6.0+cu124, Vulkan SDK 1.3.268.0,
-- an X11 display (`DISPLAY` set) — the binary opens a Vulkan window.
+- a Vulkan ICD. **No X11 display is required** with `--headless` (the surfaceless
+  path skips the window); only the legacy GUI / `--exit-after` path opens a Vulkan
+  window and needs `DISPLAY` (or `xvfb`).
 
 Drop the downloaded `hex` into `interactive-hex-meshing/bin/Release/` and use
-`cli_run/run.sh` as in A.5. If your environment differs, build from source (A or B).
+`cli_run/run.sh` as in A.5 (add `--headless`). If your environment differs, build
+from source (A or B). **Verified 2026-06-18:** the shipped binary runs the full
+smoke (`SMOKE_HEADLESS=1 ./cli_run/smoke_test.sh`) in a matching env it did not
+build — **18 526 hexes, 0 inverted**.
 
 ---
 
-## GUI note (current limitation)
+## Display modes (GUI vs headless)
 
-The tool currently still **launches the Vulkan GUI window**, runs the requested
-stage(s), and — with `--exit-after` (which `cli_run/run.sh` and `smoke_test.sh`
-pass) — closes the window and exits. So it needs Vulkan + a display today. A true
-no-GUI headless mode (and a look at which steps actually need the GPU) is on the
-roadmap; see `small_plan.txt`.
+Three ways to run, in increasing display-independence:
+- **GUI** (default): launches the Vulkan window; interactive.
+- **`--exit-after`**: opens the window, runs the script, closes it — still needs a
+  display (real X11 or `xvfb`). Used by `smoke_test.sh` by default.
+- **`--headless`** (Week-3, shipped): creates **no window/surface/swapchain at
+  all** — needs a Vulkan ICD + GPU but **no display**. Use `--headless` (or
+  `SMOKE_HEADLESS=1 ./cli_run/smoke_test.sh`). Design + verification in
+  [HEADLESS.md](HEADLESS.md); the per-stage GPU/CPU split is in
+  [DEPENDENCY_MAP.md](DEPENDENCY_MAP.md) and [CPU_ONLY.md](CPU_ONLY.md).

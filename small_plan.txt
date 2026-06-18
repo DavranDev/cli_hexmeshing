@@ -93,51 +93,48 @@ USAGE_AND_TESTS.md + binary + smoke_test.sh + the demo.
 ================================================================================
 2. WEEK 2  (reproducible builds + headless investigation)
 ================================================================================
-STATUS (anchored to this week, Mon 2026-06-08 .. Fri 2026-06-12; spill ok per
-Ronald's email). Active on branch `cli-runner`. Detailed step-by-step breakdown
-lives in `week2_plan.txt` (T1 Dockerfile, T2 headless memo, T3 dependency map,
-T4 native build). In progress: T1 self-contained Dockerfile (item 1 below).
+STATUS: WEEK 2 COMPLETE (all four items below done; details in week2_plan.txt +
+cli_run/WEEK2_UPDATE.md). Branch `cli-runner`. GPU run-validation closed out in
+Week 3 on the local RTX 4090.
 
-[ ] 1. SELF-CONTAINED DOCKERFILE that builds the UPDATED source end-to-end.
+[x] 1. SELF-CONTAINED DOCKERFILE that builds the UPDATED source end-to-end.   (DONE: Dockerfile.build; GPU smoke validated in W3 T4)
        Today the flow is: prebuilt `docker-hexmesh` image + host source mounted +
        compile.sh. Goal: a single Dockerfile that COPYs/clones the updated source,
        installs deps (CUDA toolkit, libtorch, Vulkan SDK, system libs), compiles
        evocube + hex, and yields a ready-to-run image. Document every step.
-[ ] 2. NON-DOCKER (native / bare-metal) BUILD instructions:
+[x] 2. NON-DOCKER (native / bare-metal) BUILD instructions:   (DONE: BUILD.md §B, compile-verified)
          - enumerate host prerequisites (CUDA toolkit + driver, libtorch matching
            CUDA, Vulkan SDK 1.3.x, CMake, GCC, X11/GL libs, Eigen, etc.)
          - step-by-step build of evocube + hex without Docker
          - test on as-clean-as-possible a machine; record gaps/pitfalls.
        (Risk: hard to fully verify without a clean host — see Risks.)
-[ ] 3. HEADLESS — investigation + scoping (feeds Week 3 implementation):
+[x] 3. HEADLESS — investigation + scoping (feeds Week 3 implementation):   (DONE: HEADLESS.md memo -> implemented in W3 T1)
          - confirm/keep current `--exit-after` (GUI opens, runs, closes).
          - trace where the Vulkan window/context is created (main.cpp ->
            HexMeshingApp::Prepare) and which stage code touches GUI/view objects
            (e.g. UpdateAnchorsView, PolycubeView.Update).
          - produce a feasibility memo: what must be stubbed/guarded to skip the
            window entirely (a `--headless` path). Prototype if time allows.
-[ ] 4. DEPENDENCY MAP — part 1: instrument each stage and record which calls hit
-       CUDA (compute) vs Vulkan (render). Start the per-stage table in 4B.
+[x] 4. DEPENDENCY MAP — part 1: instrument each stage and record which calls hit
+       CUDA (compute) vs Vulkan (render). Start the per-stage table in 4B.   (DONE: DEPENDENCY_MAP.md static pass)
 
 
 ================================================================================
 3. WEEK 3  (true headless mode + GPU/CPU analysis + report)
 ================================================================================
-[ ] 1. GPU / VULKAN / NVIDIA DEPENDENCY MAP — final, per stage. Key framing
+[x] 1. GPU / VULKAN / NVIDIA DEPENDENCY MAP — final, per stage.   (DONE: DEPENDENCY_MAP.md final + runtime evidence, W3 T2). Key framing
        (preliminary in 4B): Vulkan + X11 are ONLY the GUI renderer; the pipeline
        MATH uses CUDA/libtorch + geomlib .cu kernels. So "remove NVIDIA/Vulkan"
        is really TWO questions: (a) drop Vulkan/X11 -> headless; (b) drop CUDA ->
        CPU-only. Deliver the table + the split.
-[ ] 2. HEADLESS MODE — deliver: either implement a `--headless` path that skips
-       Vulkan window creation (if Week-2 scoping says it's tractable), OR deliver
-       a concrete design + effort estimate if it is a larger refactor.
-[ ] 3. CPU-ONLY FEASIBILITY: assess each GPU touch-point —
-         - libtorch CUDA ops (optimizers): many port to CPU tensors cheaply.
-         - geomlib CUDA kernels (PointTetMeshTest, GeneralizedTriangleProjection):
-           CUDA-only today; CPU would need kernel ports.
-       Identify which STAGES could run CPU-only now vs which need work. Stage 2
-       (discretization) looks largely combinatorial -> best CPU-only candidate
-       (VERIFY). Deliver a feasibility report + recommended path.
+[x] 2. HEADLESS MODE — IMPLEMENTED a `--headless` path (surfaceless Vulkan, design
+       B) that skips window/surface/swapchain/pipelines/Gui.   (DONE: W3 T1; metric
+       gate PASS on RTX 4090 — 18526 hexes, 0 inverted, no DISPLAY.)
+[x] 3. CPU-ONLY FEASIBILITY: assess each GPU touch-point —   (DONE: CPU_ONLY.md, W3 T3)
+         - libtorch CUDA ops (optimizers): ~39 .cuda() calls, all mechanical (device knob).
+         - geomlib CUDA kernels (PointTetMeshTest=trivial, GeneralizedProjection=medium port).
+       Stage 2 (discretization) VERIFIED CPU-only — ran on a CUDA-less box (lavapipe),
+       18526 hexes, no CUDA. Per-stage verdict + costed plan + recommended path delivered.
 [ ] 4. REPORT assembly: consolidate BUILD/USAGE/TESTS/SOURCE_CHANGES + the
        headless + GPU/CPU analysis into one report-ready document.
 

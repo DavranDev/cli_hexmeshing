@@ -1,13 +1,111 @@
-# Headless feasibility memo
+# Headless mode — design + implementation
 
-**Question for the reviewer:** what stands between today's `--exit-after` *GUI
+> **STATUS (Week 3, T1): IMPLEMENTED.** `--headless` is now a real flag.
+> Sections 1–7 below are the original Week-2 feasibility trace that scoped the
+> work (kept verbatim as the design rationale); **§0 records what was actually
+> built and verified in Week 3.** The Week-2 line "no source was changed" applied
+> to the memo only and is superseded by §0.
+
+**Question the memo answered:** what stands between today's `--exit-after` *GUI
 automation* (the window opens, the script runs, the window closes) and a true
 `--headless` mode that needs no on-screen window — and how big is that change?
 
-This memo answers it from a source trace of the startup path and every stage's
-view call sites, plus an `xvfb` experiment. **No source was changed for this
-deliverable** — it is the scoping memo the Week-2 plan (T2) asks for. The reasons
-it is a memo and not a prototype are at the end (§7).
+It answers it from a source trace of the startup path and every stage's view call
+sites, plus an `xvfb` experiment, and recommended **design B (surfaceless
+Vulkan)**. Week 3 promoted that recommendation to code.
+
+---
+
+## 0. Implementation (Week 3, T1)
+
+### What was built — design B / "LEVEL 1" (surfaceless Vulkan)
+A real `--headless` flag where **no GLFW window, Vulkan surface, swapchain, render
+pipelines or GUI are ever created**. The `VkInstance` + logical `Device` are still
+created (surfaceless), so the compute path and the view objects can allocate GPU
+buffers exactly as before — nothing is ever presented. The tool takes the input,
+runs the scripted pipeline, writes output, and exits. (Contrast `--exit-after`,
+which still *opens* a window and then closes it.)
+
+`LEVEL 2` (drop the Vulkan device entirely — the memo's "design A") was **not**
+taken: `GlobalController` holds a `vkoo::Device&` by reference and `GlobalView`
+eagerly builds Vulkan sub-views at construction, so removing the device means
+rewriting the controller/view classes (~1–1.5 wk) — that is the CPU-only work
+(Week-3 T3), not this flag.
+
+### The change is additive and confined to startup (5 files, ~1 stage untouched)
+| File | Change |
+|---|---|
+| `hex/src/main.cpp` | parse `--headless`; pass to `Prepare(headless)`; skip `MainLoop()` (exit after script); usage text. `--headless` requires `--script`. |
+| `vkoo/include/vkoo/core/Application.h` | `Prepare(bool headless=false)`; add `headless_`; default-init `window_{nullptr}`, `surface_{VK_NULL_HANDLE}`. |
+| `vkoo/src/core/Application.cpp` | guard `PrepareWindow`/glfw surface exts/`CreateSurface`/`VK_KHR_swapchain`/`RenderContext` behind `!headless`; `GetWindowSize` falls back to starter dims when there is no swapchain; guard window/GLFW teardown in the dtor. |
+| `hex/src/HexMeshingApp.{h,cpp}` | `Prepare(bool)`: skip `SetupRenderPipelines()` + `gui_` when headless. |
+| `cli_run/run.sh` | forward a `--headless` flag to the `hex` invocation. |
+
+**No stage/optimizer/view files were edited.** The memo's §4 listed the class-(a)
+view-update call sites as candidates to guard; that turned out **unnecessary under
+LEVEL 1** because (verified by grep) **no controller or view references
+`render_context_` or `gui_`** — they only touch `device_` (which still exists) and
+the scene. So those calls run harmlessly and never dereference the skipped
+swapchain/GUI. The two GUI-only touchpoints that *do* use the swapchain —
+`SaveScreenshot` (F10 key) and `UpdatePipelines` (an ImGui checkbox) — are reachable
+only from `HandleInputEvent`/`DrawGui`, which the script path never enters.
+Why this is safe at the Vulkan layer: `PhysicalDevice::IsPresentSupported()`
+already no-ops on a `VK_NULL_HANDLE` surface, and the only throw-on-no-present
+path (`Device::GetSuitableGraphicsQueue`) is called solely by `RenderContext`,
+which headless skips.
+
+### Startup trace — before vs after
+| Step (`HexMeshingApp::Prepare` → `vkoo::Application::Prepare`) | GUI (default) | `--headless` |
+|---|---|---|
+| `glfwInit` + `glfwCreateWindow` + input callbacks | ✔ | **skipped** |
+| glfw-required surface instance extensions | ✔ | **skipped** (only `VK_KHR_get_physical_device_properties2`) |
+| `VkInstance` | ✔ | ✔ |
+| `glfwCreateWindowSurface` → `VkSurfaceKHR` | ✔ | **skipped** (`surface_` stays `VK_NULL_HANDLE`) |
+| logical `Device` (+ `VK_KHR_swapchain`) | ✔ (with swapchain ext) | ✔ (**no** swapchain ext) |
+| `RenderContext` (swapchain) | ✔ | **skipped** |
+| `HexConvention`, `CreateSampler`, `SetupScene` (controller + views) | ✔ | ✔ |
+| `SetupRenderPipelines`, `Gui` | ✔ | **skipped** |
+| `MainLoop` (per-frame render/present) | ✔ | **never entered** |
+
+### Verification
+- **Compile:** clean incremental build in the `docker-hexmesh` env image
+  (CUDA 12.4 toolchain, **no GPU needed to build**): `[100%] Built target hex`.
+- **`hex --help`** lists `--headless`.
+- **`hex --headless --script <cfg>` with `DISPLAY` unset** (this driverless box):
+  ```
+  [info] workspace path: /space/interactive-hex-meshing/bin/Release
+  [info] vkoo: headless mode - skipping window, surface and swapchain (surfaceless Vulkan).
+  Validation layer: terminator_CreateInstance: Failed to CreateInstance in ICD 2.  Skipping ICD.
+  terminate called after throwing an instance of 'std::runtime_error'  what():  Ugh!   # exit 134
+  ```
+  The headless log line prints, **no GLFW/X11/window step runs**, and execution
+  reaches the `vkCreateInstance` boundary with **no `DISPLAY` and no xvfb** — the
+  only remaining failure is the missing GPU **ICD/driver** on this box. That is the
+  expected clean stop and proves the window/surface/swapchain path was skipped in
+  code — the same Vulkan boundary the Week-2 `xvfb` experiment (§5) hit.
+
+### Definition of done — metric gate PASSED (T1.6, 2026-06-18)
+The **metric gate** is the real definition of done: `hex --headless` must produce
+**0 inverted hexes and metrics identical to the GUI/`--exit-after` run**. Run on the
+RTX 4090 (driver 580.159.03), full chain on `spot.mesh`, **`--headless` with no
+`DISPLAY`**, the final `result_metrics.yaml` is:
+```
+total_hexes: 18526        # identical to the GUI / xvfb smoke run (§5)
+inverted_count: 0         # PASS — hard gate met
+scaled_jacobian: min 0.0244 / mean 0.862 / max 0.9997
+```
+So `--headless` is **done**: it runs the whole pipeline with no window and matches
+the GUI result. (Per-stage GPU evidence for the same run is in
+[DEPENDENCY_MAP.md](DEPENDENCY_MAP.md) §4.)
+
+### Usage
+```bash
+# direct binary (in-container / native; no DISPLAY, no xvfb):
+./hex --headless --script cli_run/configs/stage_deformation.yaml
+
+# via the wrapper (forwards --headless):
+HEX_LOCAL=1 ./cli_run/run.sh deform input.mesh --headless
+```
 
 ---
 
@@ -202,9 +300,14 @@ So the Week-2 deliverable is this memo + estimate. **Week-3 plan:** on a GPU hos
 gate it on the smoke-test metric diff (must match the GUI run), (4) fold design
 **A** into the CPU-only feasibility work.
 
-## 8. Validation checklist (when a GPU host is available)
+## 8. Validation checklist
 - [x] `xvfb-run ./cli_run/smoke_test.sh` → `PASS, 0 inverted` (confirms §5 / design C).
       **Done 2026-06-17 (RTX 4090): PASS, 18 526 hexes, 0 inverted.**
-- [ ] `--headless` (design B) smoke test → **same** `total_hexes` and `inverted_count: 0`
-      as the GUI `--exit-after` run on `spot.mesh` (and `toy_plane`).
-- [ ] `ldd` / runtime: headless binary needs the Vulkan ICD but **no** `DISPLAY`.
+- [x] **`--headless` (design B) implemented + compile-verified** (Week 3 T1, §0).
+      `hex --help` lists it; `hex --headless --script …` skips window/surface/
+      swapchain in code and reaches the Vulkan-ICD boundary with no `DISPLAY`.
+- [x] **`--headless` metric gate PASS** (2026-06-18, RTX 4090) → full chain on
+      `spot.mesh` headless ⇒ **`total_hexes: 18526`, `inverted_count: 0`** —
+      identical to the GUI/`xvfb` run. Definition of done met (§0).
+- [x] **runtime: headless run needs the Vulkan ICD but no `DISPLAY`** — the GPU
+      chain above ran with `DISPLAY` unset and no `xvfb`.

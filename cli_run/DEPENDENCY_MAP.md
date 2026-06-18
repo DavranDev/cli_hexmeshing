@@ -1,10 +1,12 @@
-# GPU / Vulkan / CUDA dependency map — part 1
+# GPU / Vulkan / CUDA dependency map (final — static + runtime)
 
-Replaces the old §4B *hypothesis* (in `small_plan.txt`) with a **static,
-evidence-backed** map of what each pipeline stage actually depends on. Paths are
-relative to the CDM submodule (`interactive-hex-meshing/`); line numbers are from
-the `cli-runner` branch. This is **part 1 (static pass)**; cells needing a GPU to
-confirm at runtime are marked **`pending W3`** — no silent guesses.
+Replaces the old §4B *hypothesis* (in `small_plan.txt`) with an **evidence-backed**
+map of what each pipeline stage actually depends on. Paths are relative to the CDM
+submodule (`interactive-hex-meshing/`); line numbers are from the `cli-runner`
+branch. **Both passes are now done:** part 1 = static source trace (§§2–5); part 2 =
+per-stage **runtime** `nvidia-smi` evidence on the RTX 4090 (§4). No "pending" cells
+remain. The CPU-only cost (device knob + kernel ports) is scoped in
+[CPU_ONLY.md](CPU_ONLY.md).
 
 ---
 
@@ -70,28 +72,45 @@ A CPU pipeline must port (B) (or route around it); (A) is comparatively easy.
 
 ## 4. Per-stage table
 
-| Stage | CUDA touches (`file:line`) | Vulkan (V) | Runtime GPU evidence | CPU-only verdict |
+| Stage | CUDA touches (`file:line`) | Vulkan (V) | Runtime GPU evidence (peak util) | CPU-only verdict |
 |---|---|---|---|---|
-| **0 deform** | libtorch only: `CubicVolumetricDeformer.cpp:19-56` (8× `.cuda()`). **No geomlib kernel, no SDF.** | display-only (views) | **76% peak util — active** | **cheap** — libtorch device knob; no kernel |
-| **1 decompose** | `TetrahedralMesh.cpp:156-158` `PointTetMeshTest` **(kernel B)** via `CreateDistanceField`→`ComputeDistanceFieldGPU`; re-called in opt loop `PolycubeOptimizer.cpp:285,342`. + libtorch `CreateAnchors` `TetrahedralMesh.cpp:92,106,108`, `PolycubeOptimizer.cpp:23,106,238` | display-only (views) | **57% peak util — active** | **kernel-port-needed** — SDF kernel is CUDA-only & on the hot path |
-| **2 discretize** | **none** (direct or transitive — §5) | display-only (views) | **28% peak util — lowest, no CUDA compute** | **now** — combinatorial; strongest CPU candidate |
-| **3 hexahedralize** | `HexComplexDeformer.cpp:101` `GeneralizedTriangleProjection` **(kernel B)** + 15× `.cuda()`; `HexahedralizationStage.cpp:592` `GeneralizedTetrahedronProjection` (pullback); `:544` `ComputeHausdorffDistance` (CUDA-only metric), `:534-542,594-596` `.cuda()` | display-only (views) | **68% peak util — active** | **kernel-port-needed** — projection kernel is CUDA-only |
+| **0 deform** | libtorch only: `CubicVolumetricDeformer.cpp:19-56` (8× `.cuda()`). **No geomlib kernel, no SDF.** | display-only (views) | **72% — CUDA-active** | **cheap** — libtorch device knob; no kernel |
+| **1 decompose** | `TetrahedralMesh.cpp:156-158` `PointTetMeshTest` **(kernel B)** via `CreateDistanceField`→`ComputeDistanceFieldGPU`; re-called in opt loop `PolycubeOptimizer.cpp:285,342`. + libtorch `CreateAnchors` `TetrahedralMesh.cpp:92,106,108`, `PolycubeOptimizer.cpp:23,106,238` | display-only (views) | **55% — CUDA-active** | **kernel-port-needed** — SDF kernel is CUDA-only & on the hot path |
+| **2 discretize** | **none** (direct or transitive — §5) | display-only (views) | **13% — no CUDA compute** (≈ launch transient) | **now** — combinatorial; **proven CPU-only** (see below) |
+| **3 hexahedralize** | `HexComplexDeformer.cpp:101` `GeneralizedTriangleProjection` **(kernel B)** + 15× `.cuda()`; `HexahedralizationStage.cpp:592` `GeneralizedTetrahedronProjection` (pullback); `:544` `ComputeHausdorffDistance` (CUDA-only metric), `:534-542,594-596` `.cuda()` | display-only (views) | **66% — CUDA-active** (883 MiB CUDA) | **kernel-port-needed** — projection kernel is CUDA-only |
 | *shared* | `models/TetrahedralMesh.cpp` (anchors + SDF, used by stage 1); `optim/torch_utils.cpp` = **CPU** tensor helpers (not CUDA) | — | — | — |
 
 Vulkan column is identical for all stages by design — the renderer is display-only
 (full call-site classification in [HEADLESS.md](HEADLESS.md) §4).
 
-**Runtime evidence (measured 2026-06-17, RTX 4090 + driver 580.159.03).** Each stage
-was run on `spot.mesh` while polling `nvidia-smi --query-gpu=utilization.gpu`. Peak
-GPU utilization corroborates the static map: **deform 76%, decompose 57%,
-hexahedralize 68%** (clearly CUDA-active) vs **discretize 28%** — the lowest by far,
-consistent with *no CUDA compute* (its residual GPU use is the libtorch CUDA context
-that every `hex` process loads at startup, plus the Vulkan window). Caveat: peak
-*memory* does **not** discriminate (~1.1–1.9 GB for every stage, because that
-libtorch context + Vulkan load regardless), and the GPU is shared with the desktop
-(138 MiB idle) and the optimizers are stochastic — so utilization is the signal and
-values are indicative, not exact. The full pipeline also passes end-to-end on this
-GPU (smoke test: **18 526 hexes, 0 inverted**).
+**Runtime evidence (re-measured 2026-06-18, RTX 4090 + driver 580.159.03, full chain
+on `spot.mesh`, `--headless`).** Each stage ran in its own `hex` process while
+polling `nvidia-smi` every 100 ms for both `utilization.gpu,memory.used` and
+per-process `--query-compute-apps`. Idle baseline 3 % / 323 MiB.
+
+| Stage | peak util | peak GPU mem (global) | per-proc CUDA mem | wall | CUDA compute? |
+|---|---:|---:|---:|---:|---|
+| 0 deform | **72 %** | 1070 MiB | 69 MiB | 4.2 s | yes |
+| 1 decompose | **55 %** | 1035 MiB | 81 MiB | 1.9 s | yes |
+| 2 discretize | **13 %** | 531 MiB | 69 MiB | 1.1 s | **no** |
+| 3 hexahedralize | **66 %** | 1342 MiB | 883 MiB | 3.4 s | yes |
+
+**Reading it.** Utilization is the discriminator: deform/decompose/hexahedralize sit
+at **55–72 %** (CUDA-active), while **discretize peaks at 13 %** — barely above idle,
+and its actual discretization is ~11 ms of CPU work (log timestamps). The honest
+caveats: (a) a small (~69 MiB) CUDA *context* shows up even for discretize — that is
+`torch::manual_seed(42)` at startup seeding the CUDA RNG **when a GPU is visible**,
+**not** stage compute (on a driverless box no context is created and S2 still runs —
+next paragraph); (b) the Vulkan renderer here runs on the **same** NVIDIA GPU, so
+some of every stage's util/mem is display, not CUDA; (c) optimizers are stochastic,
+so values are indicative.
+
+**Decisive S2 proof (cross-check).** Discretize was also run on a **CUDA-less box**
+(no NVIDIA driver; software-Vulkan via lavapipe) and completed identically —
+**18 526 hexes, exit 0, no CUDA op** ([CPU_ONLY.md](CPU_ONLY.md) §1). Any `.cuda()`
+would have thrown there, so S2 is conclusively **CPU-only**. The full chain also
+passes end-to-end on the GPU headless (**18 526 hexes, 0 inverted** —
+[HEADLESS.md](HEADLESS.md) §0 / T1.6).
 
 ---
 
@@ -136,11 +155,11 @@ knob), Stages 1 & 3 = need a CUDA-kernel port** (SDF `PointTetMeshTest` for stag
 Stage 0 with a device knob, and a costed kernel-port for 1 & 3* — exactly the order
 to tackle it.
 
-**Pending Week 3 (part 2):**
-- ~~Runtime evidence (§3.2)~~ **DONE 2026-06-17** — per-stage GPU utilization measured
-  on an RTX 4090 (table above); it corroborates the static map (stage 2 clearly the
-  lowest). Full pipeline passes on GPU (18 526 hexes, 0 inverted).
-- Confirm the libtorch device-knob scope (count + route the ~40 `.cuda()` calls).
-- Scope/estimate the CPU port (or CPU fallback) for the two geomlib kernels — the
-  actual gate on a full CPU-only pipeline; ties into [HEADLESS.md](HEADLESS.md)
-  design A (no-Vulkan) since both remove GPU dependence.
+**Week-3 follow-ups — all now resolved:**
+- ✅ **Runtime evidence (part 2)** — per-stage `nvidia-smi` measured on the RTX 4090
+  (§4 table); corroborates the static map (stage 2 clearly the lowest, 13 %).
+- ✅ **libtorch device-knob scope** — the ~39 `.cuda()` calls are counted + classified
+  (all mechanical) in [CPU_ONLY.md](CPU_ONLY.md) §2.
+- ✅ **CPU port of the two geomlib kernels** — scoped + estimated (SDF = trivial;
+  generalized-projection = medium) in [CPU_ONLY.md](CPU_ONLY.md) §3. Ties into
+  [HEADLESS.md](HEADLESS.md) design A (no-Vulkan) since both remove GPU dependence.

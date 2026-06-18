@@ -17,3 +17,8 @@ lib/
 # Generated pipeline run outputs (the whole output/ tree is created at runtime
 # by cli_run/run.sh; demo inputs come from interactive-hex-meshing/assets/tutorial/).
 output/
+
+# Shipped release artifacts (the prebuilt `hex` binary + its manifest). Binaries
+# do not belong in git — they are delivered as a GitHub Release asset / Docker
+# image. Staged here (T5) before upload.
+dist/

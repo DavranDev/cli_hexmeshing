@@ -1,0 +1,373 @@
+================================================================================
+WEEK-3 EXECUTION PLAN — step by step
+Owner: Davran | Drafted: 2026-06-17 | Update due: Fri 2026-06-19 (ok to spill to
+early next week per Ronald's standing note)
+Branch: cli-runner (parent DavranDev/cli_hexmeshing + interactive-hex-meshing fork)
+Follows: week2_plan.txt (T0-T5 all done, committed locally [ahead 4], not pushed)
+================================================================================
+
+ORIENTATION — where Week 3 sits
+--------------------------------------------------------------------------------
+Weeks 1-2 delivered the build/usage/test/source-tracking foundation and the
+*feasibility* layer (headless memo, dependency map part 1, native build compile-
+verify). Week 3 turns feasibility into DELIVERY:
+  - implement true headless mode (not just scope it),
+  - back the dependency map with runtime evidence,
+  - prove CPU-only where it's free (Stage 2) and cost the rest,
+  - rebuild + ship the binary, and
+  - fold everything into ONE report-ready document.
+
+THE ONE HARD CONSTRAINT (read first): this dev box has NO working NVIDIA driver.
+Anything that must *run the GPU pipeline* (the 0-inverted smoke gate, per-stage
+nvidia-smi evidence, native/Docker run-validation, slim-image validation) can be
+built and staged here but only CLOSED OUT on a GPU host. Every such step below is
+tagged [GPU-HOST]. Steps tagged [HERE] are fully doable on this box now. This
+split is the plan's backbone — do all [HERE] work first so the GPU-host session
+(whenever we get one) is a tight, scripted validation pass, not exploration.
+
+CONSTRAINT (unchanged from W1/W2): keep changes ADDITIVE. Original CDM
+algorithms (model/optimizer/geometry) stay untouched; new code is a `--headless`
+startup guard + a device knob + new docs, all in the same additive style as the
+RunFromScript() shims. Submodule source changes go in the fork first, parent
+pointer second.
+
+TASK MAP (Ronald's 13 summarized items -> Week-3 tasks; see COVERAGE CHECK at end)
+  T1 True headless mode .......... Ronald #10, #11
+  T2 Dependency map part 2 ....... Ronald #12
+  T3 CPU-only feasibility ........ Ronald #13
+  T4 GPU-host run-validation ..... Ronald #2, #3 (closeout of W2 build work)
+  T5 Final binary ................ Ronald #5
+  T6 Consolidated report ......... Ronald #1, #4, #6, #7, #8 (report assembly)
+  T7 Update + push + re-verify ... Ronald #9
+(Items #1/#4/#6/#7/#8 were largely delivered W1-W2; T6 consolidates them into the
+report and refreshes anything the headless/CPU work changes.)
+
+Priority order for the week: T0 -> T1 (centerpiece) -> T3 (Stage-2 is [HERE]) ->
+T6 (report can absorb results as they land) -> T2/T4/T5 ([GPU-HOST], batch them)
+-> T7. The Friday-demoable headline is T1 (headless) + T3 (Stage-2 CPU run).
+
+--------------------------------------------------------------------------------
+T0. HOUSEKEEPING + DECISIONS  (30 min, do first)  [HERE]
+--------------------------------------------------------------------------------
+[x] 0.1  PUSH DECISION — DECIDED 2026-06-18: DEFER all commits + push to the END of
+         Week 3, then commit everything together in one batch (Davran's call; files
+         keep changing across T4/T5/T6 so we avoid churn). Order when we do it:
+         submodule fork FIRST (interactive-hex-meshing @ DavranDev/cli-runner), then
+         the parent pointer — never the reverse, or reviewers get a dangling
+         submodule ref. (So 0.4's "small per-task commits" is superseded by this
+         batch-at-end policy.)
+[x] 0.2  GPU-HOST DECISION (gates T2/T4/T5 closeout) — RESOLVED 2026-06-18: the dev
+         box IS a GPU host (RTX 4090, driver 580.159.03, nvidia-container-toolkit);
+         [GPU-HOST] items run locally with --gpus all. (Old "no driver" was stale.)
+         Original wording: identify whether a host
+         with an NVIDIA driver + CUDA 12.4 + Vulkan ICD + X11 is available this
+         week (TAMU lab box, cloud GPU, Ronald's machine). All [GPU-HOST] steps
+         are written to be a single scripted session — see the GPU-HOST RUNBOOK
+         block near the end. If none is available, those items ship as
+         "code-complete, validation pending a GPU host" exactly as W2 did — that
+         is an allowed, honest outcome, NOT a failure.
+[x] 0.3  DONE 2026-06-18: small_plan.txt synced — WEEK-2 boxes ticked (all closed),
+         WEEK-3 items 1-3 (dep map / headless / CPU-only) marked done, item 4
+         (report) left pending.
+[x] 0.4  COMMIT POLICY (superseded by 0.1): NOT per-task — batch-commit everything
+         at the END of Week 3. New files this week: HEADLESS.md (upgraded),
+         DEPENDENCY_MAP.md (finalized), CPU_ONLY.md (new), source for --headless,
+         + Dockerfile.build slim stage (T4.4); report doc still to come (T6).
+
+--------------------------------------------------------------------------------
+T1. TRUE HEADLESS MODE — IMPLEMENT `--headless`   (the centerpiece, 2-3 days)
+--------------------------------------------------------------------------------
+GOAL: a real `--headless` flag where NO GUI window/surface/swapchain is created —
+the tool takes the input, runs the pipeline, writes output, exits. This is the
+Week-2 HEADLESS.md "design B" (surfaceless Vulkan), promoted from memo to code.
+Today's `--exit-after` opens the window then closes it; headless never opens it.
+
+WHAT WE ALREADY KNOW (from W2 HEADLESS.md, cite in the upgraded memo):
+  - main.cpp: `app.Prepare()` (main.cpp:28) runs BEFORE the script branch; that is
+    where vkoo::Application::Prepare() builds glfwInit/window, VkInstance,
+    VkSurfaceKHR, device, swapchain, render pipelines, Gui.
+  - Compute is libtorch/CUDA, INDEPENDENT of the vkoo Vulkan device.
+  - Every script-path view call is class (a) display-only EXCEPT the already-fixed
+    Stage-1 polycube writeback; Discretization's pending_view_ block is class (c)
+    mouse-only (never runs headless). So headless is a STARTUP GUARD, not a logic
+    rewrite — the risky (b)-class side effect was already fixed in W1.
+  - xvfb-run already passes the X11 half here; only the GPU/ICD is missing locally.
+
+DESIGN DECISIONS (made up front):
+  - Add `--headless` as a THIRD flag alongside --script/--exit-after (additive in
+    main.cpp's existing arg loop, lines 14-21; update the usage string too).
+  - Two-level guarding, decide level via 1.1's trace:
+      LEVEL 1 (preferred, "design B"): keep VkInstance + logical device (in case
+        any model/geometry allocates GPU buffers through the vkoo device at load),
+        but SKIP glfwInit/window, VkSurfaceKHR, swapchain, render pipelines, Gui.
+        A surfaceless instance needs no VK_KHR_surface/glfw and no X11 at all.
+      LEVEL 2 (only if 1.1 proves the vkoo device is unused by compute): skip the
+        Vulkan device entirely too — closest to "design A", biggest win, but only
+        if nothing outside rendering touches the device.
+  - Guard, don't delete: wrap GUI-creation in `if (!headless)` so the default GUI
+    path is byte-for-byte unchanged. Same discipline as RunFromScript().
+  - Success is METRIC-GATED: headless is only "done" when the smoke test still
+    reports 0 inverted and metrics match the GUI run — that gate is [GPU-HOST].
+
+STEPS:   (T1 [HERE] steps DONE 2026-06-17 — see HEADLESS.md §0)
+[x] 1.1  [HERE] TRACE vkoo::Application::Prepare() + constructor (vkoo/ dir).
+         DONE -> LEVEL 1 chosen. Source-verified: GlobalController holds
+         vkoo::Device& by reference + GlobalView builds Vulkan sub-views at ctor,
+         so dropping the device (LEVEL 2) = rewriting controller/view classes
+         (=design A, the CPU-only work). IsPresentSupported() already no-ops on a
+         null surface, so a surfaceless device is safe. Trace written to HEADLESS.md §0.
+[x] 1.2  [HERE] Add `--headless` parsing in main.cpp (additive). DONE: third flag;
+         threads into app.Prepare(headless); skips MainLoop; requires --script;
+         usage string updated.
+[x] 1.3  [HERE] Guard startup: window+surface+swapchain+render-pipelines+Gui gated
+         behind `!headless` in vkoo Application::Prepare + HexMeshingApp::Prepare.
+         DONE: surfaceless instance (no glfw surface exts), no VK_KHR_swapchain,
+         surface_ stays VK_NULL_HANDLE; GetWindowSize falls back to starter dims;
+         window/GLFW teardown guarded in dtor.
+[x] 1.4  [HERE] Guard the class-(a) view call sites. DONE = NOT NEEDED under
+         LEVEL 1: grep confirms NO controller/view references render_context_ or
+         gui_ (they only touch device_, which still exists), so the view-update
+         calls run harmlessly. The 2 swapchain touchpoints (SaveScreenshot F10,
+         UpdatePipelines ImGui) are GUI-input only, unreachable on the script path.
+         => ZERO stage-file edits; change is startup-only (5 files).
+[x] 1.5  [HERE] COMPILE-VERIFY: DONE in docker-hexmesh env image (CUDA 12.4, no
+         GPU). [100%] Built target hex. `hex --help` shows --headless. Both the
+         binary and run.sh --headless (NO DISPLAY) print the headless log line and
+         stop cleanly at vkCreateInstance (ICD/driver missing) — window path skipped.
+[x] 1.6  METRIC GATE: DONE = PASS (2026-06-18, RTX 4090, driver 580.159.03).
+         Full chain on spot.mesh via `--headless` (NO DISPLAY, NO xvfb) ->
+         result_metrics.yaml: total_hexes=18526, inverted_count=0 (scaled_jac
+         min0.0244/mean0.862) — IDENTICAL to the GUI/xvfb run. Definition of done
+         for T1 met. (The box turned out to HAVE a working RTX 4090 — the old
+         "no driver" assumption was stale; see HEADLESS.md §0.)
+[x] 1.7  [HERE] Upgrade HEADLESS.md from memo -> "implemented". DONE: HEADLESS.md
+         §0 (final design LEVEL 1, guard table, before/after startup trace, verify
+         log, gate pending); §8 checklist updated; --headless example +
+         passthrough added to USAGE_AND_TESTS.md and run.sh.
+[ ] 1.8  FALLBACK — NOT TRIGGERED. Surfaceless Vulkan did not fight back; the
+         guard compiles + cleanly stops at the GPU line, build never broken.
+
+DONE WHEN: `hex --headless --script X` runs the pipeline with NO window created
+and writes output; smoke test still 0 inverted on a GPU host (or that gate is
+explicitly marked pending). Default GUI path unchanged.
+
+--------------------------------------------------------------------------------
+T2. DEPENDENCY MAP — PART 2 (runtime evidence)   (2-3 h)   [GPU-HOST]
+--------------------------------------------------------------------------------
+GOAL: replace every "pending Week 3" cell in DEPENDENCY_MAP.md with measured
+runtime evidence; finalize the per-stage GPU verdict.
+
+WHAT W2 ALREADY ESTABLISHED (static, confirmed here today):
+  - 2 project CUDA kernels: geomlib/generalized_projection_cuda.cu,
+    geomlib/point_tet_mesh_test_cuda.cu.
+  - .cuda()/kCUDA lives in exactly 5 hex/src files (re-confirmed 2026-06-17):
+    optim/CubicVolumetricDeformer.cpp (S0), optim/PolycubeOptimizer.cpp (S1),
+    optim/HexComplexDeformer.cpp (S3), controllers/stages/HexahedralizationStage.cpp
+    (S3), models/TetrahedralMesh.cpp (shared). NOT torch_utils.cpp (CPU helpers).
+  - Static verdict: S2 discretize = CPU-only now; S0 = CPU-cheap (libtorch only);
+    S1 & S3 = kernel-port-needed.
+
+STEPS:   (T2 DONE 2026-06-18 on the local RTX 4090 — see DEPENDENCY_MAP.md §4)
+[x] 2.1  Ran all 4 stages on spot.mesh (--headless) polling nvidia-smi every 100ms
+         (utilization.gpu,memory.used + per-proc --query-compute-apps). Peak util:
+         deform 72%, decompose 55%, discretize 13%, hexahedralize 66% (idle 3%).
+         Peak GPU mem 531MiB (S2) .. 1342MiB (S3). All rc=0.
+[x] 2.2  KEY VALIDATION: Stage 2 = lowest util by far (13% ~ launch transient; the
+         discretization itself is ~11ms CPU). Decisive proof S2 is CUDA-free: it
+         ALSO ran on a CUDA-less box (lavapipe), 18526 hexes, no CUDA (CPU_ONLY.md
+         §1). Honest caveat documented: a ~69MiB CUDA *context* appears even for S2
+         from torch::manual_seed seeding the CUDA RNG when a GPU is visible — not
+         stage compute.
+[x] 2.3  Finalized DEPENDENCY_MAP.md: retitled (final), removed all "pending"
+         markers, added the per-stage runtime table, corrected the lazy-context
+         point, and pointed the resolved follow-ups at CPU_ONLY.md.
+
+DONE WHEN: the per-stage table has no unverified cells; Stage 2's zero-GPU
+runtime is documented.   <-- MET.
+
+--------------------------------------------------------------------------------
+T3. CPU-ONLY FEASIBILITY — Stage 2 proof + costed plan for the rest  (1-1.5 days)
+--------------------------------------------------------------------------------
+GOAL: deliver CPU_ONLY.md: (1) Stage 2 PROVEN to run CPU-only, (2) a costed,
+file-level plan for the libtorch device-knob (S0) and the two geomlib kernel
+ports (S1, S3). This is the long-term "CPU-only mode" Ronald asked about, scoped
+to what's free now vs what's a project.
+
+KEY INSIGHT: Stage 2 (discretize) has ZERO direct or transitive CUDA (W2 static
+map). So Stage 2 should run on THIS box (no GPU) once headless lets it start
+without a window. That makes the Stage-2 CPU proof a [HERE] item, not [GPU-HOST].
+
+STEPS:   (T3 all [HERE] steps DONE 2026-06-17 — see cli_run/CPU_ONLY.md)
+[x] 3.1  [HERE] STAGE-2 CPU RUN: DONE = PASS. Ran `discretize --headless` on THIS
+         driverless box using the T1 build + Mesa lavapipe (software Vulkan ICD,
+         llvmpipe/CPU) + a reused stage_1_decomposition.hdf5. exit 0; produced
+         18526 hexes — IDENTICAL to the GPU smoke run; wall 0.34s, RSS ~434 MB.
+         No CUDA init/op touched (would have thrown w/o a driver). The only GPU
+         dependency left = the Vulkan view device, met in SOFTWARE (lavapipe).
+[x] 3.2  [HERE] COST THE DEVICE KNOB (S0 path): DONE. ~39 hard `.cuda()` across the
+         5 files, ALL mechanical (.cuda()->.to(device_); .cpu() readbacks stay).
+         PolycubeOptimizer is ALREADY device_-parameterized (1-line default fix).
+         S0 (CubicVolumetricDeformer) is libtorch-only/no kernel -> fully unlocked
+         by the knob. Effort ~0.5-1 day, low risk. (CPU_ONLY.md §2)
+[x] 3.3  [HERE] COST THE KERNEL PORTS (S1, S3): DONE.
+         - point_tet_mesh_test (S1 SDF sign, TetrahedralMesh:158): brute-force
+           O(N*T) double loop -> TRIVIAL CPU port (~0.5 day).
+         - generalized_projection (S3 nearest-face + barycentric grads, used by
+           Hausdorff + autograd): brute-force O(P*F); host precompute already CPU;
+           port the per-point kernel -> MEDIUM (~1.5-2.5 day), per-iter perf risk.
+         (CPU_ONLY.md §3)
+[x] 3.4  [HERE] Write CPU_ONLY.md: DONE. Per-stage verdict (S2 now / S0 device knob
+         / S1,S3 kernel ports), costed plan, recommended path (S2->S0->S1->S3),
+         min-useful (S2+S0) vs full CPU pipeline (~3-4.5 day total).
+
+DONE WHEN: Stage 2 demonstrably runs CPU-only on this box (or the precise blocker
+is documented), and S0/S1/S3 each have a file-level effort estimate.   <-- MET.
+
+--------------------------------------------------------------------------------
+T4. GPU-HOST RUN-VALIDATION of Week-2 build work   (2-3 h)   [GPU-HOST]
+--------------------------------------------------------------------------------
+GOAL: close out the W2 items that were validated only to the GPU boundary, and
+do the deferred image slimming now that a GPU host can validate it.
+
+STEPS:   (T4 DONE 2026-06-18 on the local RTX 4090 — all real PASSes)
+[x] 4.1  Dockerfile.build SMOKE PASS: rebuilt the self-contained image from CURRENT
+         W3 source (incl. --headless) as `hexmesh-cli:week3` (--target build).
+         GPU smoke PASS both ways: xvfb GUI = 18526 hexes/0 inverted; and
+         SMOKE_HEADLESS=1 (no DISPLAY) = 18526/0 -> headless proven end-to-end in
+         the shipping image. (smoke_test.sh gained a SMOKE_HEADLESS flag.)
+[x] 4.2  xvfb-run PASS: `xvfb-run ./cli_run/smoke_test.sh` in the image -> PASS,
+         18526 hexes, 0 inverted (the W2 stopgap, now actually green on a GPU).
+[x] 4.3  NATIVE RUN: the in-container-built `hex` runs NATIVELY on the host (no
+         container) on the RTX 4090 — deform (CUDA) + discretize, --headless,
+         exit 0, outputs written. Caveat: host lacks libhdf5-serial (supplied the
+         .so via LD_LIBRARY_PATH; no system install) and a true native *build*
+         still needs cuda-toolkit-12-4 (sudo). Binary-on-host-GPU = proven.
+[x] 4.4  TWO-STAGE IMAGE SLIMMING: added a `runtime` stage (cuda RUNTIME base,
+         copies only binaries + libtorch/vulkan runtime .so's + assets/shaders +
+         cli_run). `hexmesh-cli:week3-slim` = 15.2 GB vs 26.1 GB devel (-10.9 GB,
+         ~42%). ldd clean; headless smoke PASS (18526/0) out-of-the-box. Vulkan
+         note: slim bundles lavapipe for the view device (NVIDIA Vulkan ICD needs
+         the full GL stack the runtime base omits); CUDA compute stays on the GPU.
+         BUILD.md §A2.6 updated (shipped).
+
+DONE WHEN: W2's "predicted PASS" items are real PASSes.   <-- MET (all four green).
+
+--------------------------------------------------------------------------------
+T5. FINAL BINARY   (1 h on the build host)   [GPU-HOST to confirm run]
+--------------------------------------------------------------------------------
+GOAL: ship a runnable `hex` built from the FINAL Week-3 source (incl. --headless).
+         (T5 DONE 2026-06-18 — no source changes; extract + fingerprint + validate.)
+[x] 5.1  Extracted the canonical `hex` from the clean self-contained build
+         `hexmesh-cli:week3` (compiles final source incl. --headless) -> gitignored
+         dist/. sha256=dea52a45...3bed3, 9117344 bytes, `ldd` CLEAN (57 deps) in the
+         devel env. Provenance: submodule b89d47b + 5 uncommitted W3 files (commit
+         at T7). Env: CUDA 12.4 / driver>=550 (val. 580.159.03) / LibTorch 2.6.0+cu124
+         / Vulkan 1.3.268.0. (dist/MANIFEST.md)
+[x] 5.2  Staged in gitignored dist/ (hex + hex.sha256 + MANIFEST.md); NOT committed.
+         BUILD.md §C rewritten (binary now runs --headless, NO X11 needed; Docker
+         image = primary portable delivery). Bare-binary GitHub Release upload
+         DEFERRED to T7 (push gate) with the exact `gh release` command documented.
+[x] 5.3  Confirmed: the EXTRACTED artifact (sha256 verified inside) ran the full
+         4-stage --headless smoke in the docker-hexmesh env image that did NOT build
+         it -> PASS, 18526 hexes, 0 inverted. "Matching-env reuse without rebuild"
+         met. (Also: slim-image smoke T4.4 + native host run T4.3.)
+
+DONE WHEN: a matching-environment colleague can run our binary without rebuilding.
+         <-- MET (5.3 PASS).
+
+DONE WHEN: a matching-environment colleague can run our binary without rebuilding.
+
+--------------------------------------------------------------------------------
+T6. CONSOLIDATED REPORT   (0.5-1 day, absorb results as they land)   [HERE]
+--------------------------------------------------------------------------------
+GOAL: ONE report-ready document folding W1+W2+W3, mapped to Ronald's items. This
+is the "well documented for the report" ask.
+[x] 6.1  DONE 2026-06-18: assembled cli_run/REPORT3.md (the consolidated W1+W2+W3
+         report) with all 8 sections + a coverage map of Ronald's 13 items + a doc
+         map. Section 4 refreshed: source-change footprint now +682/-33 across 21
+         files (was +590/-4/18; the additive --headless guards added 3 files), still
+         no algorithm changed.
+[x] 6.2  Honest + cross-linked: REPORT3 cross-links BUILD/USAGE/SOURCE_CHANGES/
+         HEADLESS/DEPENDENCY_MAP/CPU_ONLY/MANIFEST rather than duplicating; notes the
+         push is batched to week-end and the slim-image GUI caveat. No GPU-host
+         items remain pending (all measured on the local RTX 4090).
+
+DONE WHEN: a reader can build, run, verify, and understand the GPU/CPU story from
+one document.   <-- MET (REPORT3.md).
+
+--------------------------------------------------------------------------------
+T7. WEEK-3 UPDATE + PUSH + RE-VERIFY   (1 h)
+--------------------------------------------------------------------------------
+[x] 7.1  DONE 2026-06-18: wrote cli_run/WEEK3_UPDATE.md (mirrors REPORT structure;
+         T1-T6 outcomes + the demoable headline + "what's left after Week 3").
+[~] 7.2  COMMITTED (NOT pushed — Davran: push later). Order done correctly:
+         submodule interactive-hex-meshing committed FIRST (a9e175f, --headless),
+         then the parent pointer + all W3 docs in one parent commit. Parent
+         cli-runner is ahead of origin; submodule has 1 local commit; origin UNCHANGED.
+         STILL TO DO (when pushing): `git push` submodule fork first then parent;
+         then fresh-clone --recurse-submodules + docker build re-verify. Fresh-clone
+         gotcha unchanged: repackage the GITIGNORED archives (libtorch zip + Vulkan
+         1.3.268.0; repo-root vulkansdk.tar.xz is the WRONG 1.4.341.1).
+[~] 7.3  Update PREPARED (WEEK3_UPDATE.md = the content; headline: `hex --headless`
+         runs with no GUI + Stage 2 runs CPU-only, all validated on the local RTX
+         4090). Sending left to Davran.
+
+================================================================================
+GPU-HOST RUNBOOK (paste-ready; run all [GPU-HOST] steps in one session)
+================================================================================
+Pre: NVIDIA driver (CUDA >= 12.4), nvidia-container-runtime, Vulkan ICD, X11.
+  1. T1.6 headless gate:  hex --headless --script cli_run/configs/spot.yaml
+                          # compare metrics vs the GUI/--exit-after run -> 0 inverted
+  2. T4.1 docker smoke:   docker build -f Dockerfile.build -t hexmesh-cli:week2 .
+                          docker run ... hexmesh-cli:week2 ./cli_run/smoke_test.sh
+  3. T4.2 xvfb stopgap:   xvfb-run -s "-screen 0 1280x720x24" ./cli_run/smoke_test.sh
+  4. T2.1 per-stage GPU:  nvidia-smi --query-gpu=utilization.gpu,memory.used \
+                            --format=csv -l 1 &   # then run each stage
+  5. T4.3 native run / T4.4 slim image / T5.3 binary smoke.
+Capture every console log; they become report evidence.
+
+================================================================================
+SCHEDULE (target; assumes GPU host arrives mid/late week — adjust per T0.2)
+================================================================================
+Wed Jun 17  : T0 housekeeping/decisions; T1 1.1-1.3 (trace + flag + startup guard)
+Thu Jun 18  : T1 1.4-1.5 (view guards + compile-verify); T3 3.1 Stage-2 CPU run
+              (both [HERE], no GPU needed)
+Fri Jun 19  : T3 3.2-3.4 (cost + CPU_ONLY.md); T6 report assembly; T7.1 update.
+              IF GPU host available: batch T1.6 + T2 + T4 + T5 via the RUNBOOK.
+Mon Jun 22  : GPU-host closeout if it slipped; finalize report; T7.2 push +
+              fresh-clone re-verify; T7.3 send.
+
+================================================================================
+RISKS / OPEN DECISIONS
+================================================================================
+- GPU HOST is the master dependency. No host => T1 gate, T2, T4, T5 ship as
+  "code-complete, validation pending" (honest, allowed). Decide T0.2 early so the
+  week is sequenced right (all [HERE] work front-loaded).
+- PUSH go-ahead (T0.1) still pending from W2 — blocks reviewer access; not a
+  technical risk but a real blocker.
+- Surfaceless Vulkan (T1 LEVEL 1) may need instance-extension juggling; if the
+  vkoo device turns out unused by compute, LEVEL 2 is simpler — 1.1's trace
+  decides. Fallback 1.8 keeps the week safe.
+- CPU-only is explicitly NOT a 1-week deliverable: likely outcome is "Stage 2
+  CPU-now + costed plan for S0 (device knob) and S1/S3 (kernel ports)", not a
+  full CPU pipeline. Set that expectation in the update.
+- Additive constraint: --headless + device knob must guard, not rewrite; keep the
+  default GUI/CUDA paths byte-for-byte unchanged.
+
+================================================================================
+COVERAGE CHECK (every Ronald item is scheduled)
+================================================================================
+  #1  simplified build-from-scratch guide ........ W1+W2 done -> T6 consolidate
+  #2  Docker + non-Docker build .................. W1+W2 done -> T4 GPU run-verify
+  #3  end-to-end Dockerfile for updated source ... W2 done -> T4.1/T4.4 verify+slim
+  #4  document build/usage/tests for report ...... W1 done -> T6 report
+  #5  provide compiled binary ................... W1 done -> T5 rebuild final + ship
+  #6  simplest usage + I/O behavior ............. W1 done -> T6 (+headless example)
+  #7  test cases to verify modified tool ........ W1 smoke_test -> T6 + T4 re-run
+  #8  track original-source changes ............. W1 SOURCE_CHANGES -> T6 refresh
+  #9  keep under Git ........................... ongoing -> T0.1/T7.2 push
+  #10 run without GUI / auto-close GUI .......... --exit-after exists -> T1 docs it
+  #11 true headless mode ........................ T1 (IMPLEMENT --headless)
+  #12 which steps need NVIDIA/Vulkan/GPU ........ W2 static map -> T2 runtime evidence
+  #13 CPU-only feasibility per step ............. W2 scoped -> T3 (S2 proof + plan)
+================================================================================

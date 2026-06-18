@@ -22,6 +22,14 @@ cd "$REPO_ROOT"
 INPUT="${1:-interactive-hex-meshing/assets/tutorial/spot.mesh}"
 RUN="./cli_run/run.sh"
 
+# Display mode: default is the GUI --exit-after path (needs an X display, real or
+# xvfb). Set SMOKE_HEADLESS=1 to run true headless (no window/surface/X11 at all).
+RUN_FLAG="--exit-after"
+if [[ "${SMOKE_HEADLESS:-0}" == "1" ]]; then
+  RUN_FLAG="--headless"
+  echo "=== smoke test: HEADLESS mode (no GUI window / no X11) ===" >&2
+fi
+
 if [[ ! -f "$INPUT" ]]; then
   echo "FAIL: input not found: $INPUT" >&2
   exit 1
@@ -36,7 +44,7 @@ EXAMPLE="$(basename "${INPUT%.*}")"
 run_stage() {
   local cmd="$1" stage="$2" in="$3"
   echo "==> $cmd  ($in)" >&2
-  if ! "$RUN" "$cmd" "$in" --exit-after >/dev/null 2>&1; then
+  if ! "$RUN" "$cmd" "$in" "$RUN_FLAG" >/dev/null 2>&1; then
     echo "FAIL: '$cmd' returned non-zero" >&2
     exit 1
   fi

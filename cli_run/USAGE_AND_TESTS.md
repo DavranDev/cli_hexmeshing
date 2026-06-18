@@ -38,6 +38,28 @@ M=interactive-hex-meshing/assets/tutorial/spot.mesh
 The final hexahedralization run directory holds `result.mesh` (the hex mesh,
 MEDIT format) and `result_metrics.yaml` (quality summary).
 
+## Headless mode (no GUI window at all)
+
+`--exit-after` still *opens* a GUI window (then closes it), so it needs an X11
+display (or `xvfb`). `--headless` creates **no window, surface or swapchain at
+all** — useful on a headless server or in CI. It runs the stage and exits (it
+implies `--exit-after`), and needs **no `DISPLAY` and no `xvfb`**, only the
+GPU/Vulkan driver that the compute already requires.
+
+```bash
+# via the wrapper (forwards --headless to the binary):
+./cli_run/run.sh deform <input.mesh|.hdf5> --headless
+
+# or the binary directly (in-container / native):
+./hex --headless --script <config.yaml>
+```
+
+Same inputs/outputs and the same `0 inverted` pass gate as the GUI path — see the
+full design, the startup trace, and the verification log in
+[HEADLESS.md](HEADLESS.md) §0. (The end-to-end metric check runs only on a host
+with an NVIDIA driver; on a driverless box the run stops cleanly at the Vulkan
+driver boundary after the window path is skipped.)
+
 ## Test case: tutorial meshes (the reference)
 
 Inputs ship in `interactive-hex-meshing/assets/tutorial/` — six ready-to-use
