@@ -39,7 +39,10 @@ guide: [BUILD.md](BUILD.md).
 
 ### 1.1 Docker — one self-contained command (recommended)
 `Dockerfile.build` COPYs the source and compiles `hex` + evocube inside the image.
-It is **multi-stage** with two selectable targets:
+The build **fails loudly if either binary is missing** (`compile.sh` was hardened —
+it previously masked a failed evocube build; `.dockerignore` no longer strips the
+`.git` from libigl's eigen cache that broke evocube's configure). A cold build is
+~15–25 min. It is **multi-stage** with two selectable targets:
 
 | Target | Base | Size | Use |
 |---|---|---|---|

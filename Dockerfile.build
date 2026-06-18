@@ -90,12 +90,13 @@ COPY compile.sh                /space/compile.sh
 COPY cli_run/                  /space/cli_run/
 
 # --- compile evocube + hex in one shot (the same script the manual flow runs) ---
-# compile.sh sets Torch_DIR and sources the Vulkan setup-env.sh itself. It has no
-# `set -e`, so we verify the binary afterwards and FAIL the build if it is missing
-# (otherwise a compile error would silently produce a binary-less image).
+# compile.sh now fails loudly on any build error AND verifies both binaries, so a
+# failed evocube/hex build can no longer be silently shipped. We re-assert BOTH
+# binaries here as a belt-and-suspenders gate on the image.
 RUN bash /space/compile.sh \
+ && test -x /space/evocube/build/polycube_withHexEx \
  && test -x /space/interactive-hex-meshing/bin/Release/hex \
- && echo "OK: hex binary built at /space/interactive-hex-meshing/bin/Release/hex"
+ && echo "OK: evocube + hex binaries built"
 
 # --- runtime environment (mirrors vulkan setup-env.sh + libtorch lib dir) so the
 #     baked binary resolves its shared libs without any extra sourcing ---

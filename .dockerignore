@@ -30,6 +30,14 @@ output/                    # runtime pipeline outputs (mounted at run time)
 **/build
 interactive-hex-meshing/bin/
 
+# --- libigl's download cache (evocube/lib/libigl/external/.cache): a host-specific
+# build artifact. It MUST NOT be shipped: the `**/.git` rule above strips the .git
+# from the cached eigen checkout, so in-image cmake's "git update" fails with
+# "fatal: not a git repository" and evocube's configure dies. Excluding it makes
+# libigl download eigen fresh at configure time (proven to work; matches a clean
+# clone), so the build is reproducible. ---
+**/.cache/
+
 # --- Host-only helpers not needed inside the image ---
 run_docker.sh
 run_docker.txt

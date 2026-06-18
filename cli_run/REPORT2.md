@@ -50,9 +50,17 @@ You have two options. **Option A (Docker) is the recommended, tested path.**
 ```bash
 docker build -f Dockerfile.build -t hexmesh-cli:week2 .
 ```
-That's it. The image compiles `evocube` + the `hex` binary inside itself.
-- Takes about **5 minutes** (≈8–10 on a first/cold build).
-- Produces a **~26 GB** image named `hexmesh-cli:week2`.
+That's it. The image compiles `evocube` + the `hex` binary inside itself, and the
+build now **fails loudly if either binary is missing**. (`compile.sh` was hardened:
+it previously had no error handling, so a failed `evocube` build was silently ignored
+and the image shipped with `hex` but no real `evocube` — that masking is fixed, and
+`.dockerignore` no longer strips the `.git` from libigl's eigen download cache, which
+was what broke evocube's configure in a clean build.)
+- A full/cold build takes roughly **15–25 min** (compiles evocube + hex from
+  scratch; an earlier "~5 min" figure was an incremental/cached run, not from
+  scratch).
+- Produces a **~26 GB** image named `hexmesh-cli:week2` (slim runtime variant in
+  [BUILD.md §A2.6](BUILD.md)).
 - Needs **no GPU** to build (`nvcc` compiles without a graphics card).
 
 → Full details, including what's baked in vs. supplied at run time:
@@ -127,15 +135,28 @@ Subcommands: `deform` → `decompose` → `discretize` → `hexahedralize`. Each
 output HDF5 feeds the next (see [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md)).
 
 ### 3C. Run on a server with NO screen (headless)
-If there's no monitor/X display, use a *virtual* one (`xvfb`). No `DISPLAY` needed:
+
+**Recommended (Week-3): true `--headless` — no window, no X11, no xvfb.** The Week-3
+build adds a real headless mode (use the `hexmesh-cli:week3` image; design +
+verification in [HEADLESS.md](HEADLESS.md)):
 ```bash
-docker run --runtime=nvidia --gpus all --rm \
-  -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
+docker run --gpus all --rm -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
+  -v "$(pwd)/output:/space/output" hexmesh-cli:week3 \
+  bash -lc 'SMOKE_HEADLESS=1 ./cli_run/smoke_test.sh'
+```
+
+**Legacy stopgap — virtual display (`xvfb`):** still works (it runs the full
+pipeline and writes valid metrics), **but `xvfb-run`'s X-server teardown can hang on
+some hosts/versions *after* the pipeline finishes** — the `-a`/auto-servernum cleanup
+races, leaving only `xvfb-run`/`Xvfb` alive so the final `PASS` may not print even
+though the run already succeeded (check `result_metrics.yaml`). Prefer `--headless`
+above; if you must use xvfb, wrap it in `timeout`:
+```bash
+docker run --gpus all --rm -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
   -v "$(pwd)/output:/space/output" hexmesh-cli:week2 \
   bash -lc 'apt-get update -qq && apt-get install -y -qq xvfb && \
-            xvfb-run -a -s "-screen 0 1280x720x24" ./cli_run/smoke_test.sh'
+            timeout 600 xvfb-run -a -s "-screen 0 1280x720x24" ./cli_run/smoke_test.sh'
 ```
-We tested this — it also prints `PASS` (§4).
 
 ### What "PASS" means
 The hard requirement is **`inverted_count: 0`** (no flipped/invalid hex cells) with
@@ -148,15 +169,26 @@ written to `result_metrics.yaml` in the run folder.
 
 | Check | Result |
 |---|---|
-| Docker image builds in one command | ✅ ~5 min, ~26 GB |
+| Docker image builds in one command | ✅ one-step; **~15–25 min** cold (not ~5), ~26 GB |
+| `hex` + `evocube` both built in the image | ✅ after the build was hardened (see note ‡) |
 | Full pipeline, with a screen (X11) | ✅ **PASS — 18,526 hexes, 0 inverted**, quality (scaled-Jacobian) mean ≈ 0.86 |
-| Full pipeline, **headless** (`xvfb`, no screen) | ✅ **PASS — 18,526 hexes, 0 inverted** |
-| Native (non-Docker) build on clean Ubuntu 22.04 | ✅ compiles (evocube + hex) |
+| Full pipeline, **headless** | ✅ **PASS — 18,526 hexes, 0 inverted** — via `--headless` (Week-3) and via `xvfb` (writes valid metrics; xvfb-run teardown may hang on some hosts, §3C) |
+| Native build **on a clean Ubuntu 22.04 + CUDA-12.4 toolkit + dev pkgs** | ✅ compiles (evocube + hex) — see ‡‡ |
+| Native build/run **on this dev box** | ⚠️ not reproducible here (host lacks the CUDA-12.4 toolkit + `libhdf5-dev`/`libxrandr-dev`/`libeigen3-dev`; no sudo). Use Docker. The container-built binary **does run natively** once its libs are on `LD_LIBRARY_PATH` (deform+discretize, exit 0). |
 | Binary is valid + finds its libraries (`ldd`, `--help`) | ✅ |
 
-Running these tests also caught and fixed two real issues: a shell bug in the
-in-container runner, and a wrong example command in the build doc — both fixed and
-re-verified.
+> ‡ **Build hardening (post-review fix).** `compile.sh` previously had no error
+> handling, so a failed `evocube` build was silently ignored and an evocube-less
+> image shipped while the docker build still reported success. Root cause in a clean
+> build: `.dockerignore`'s `**/.git` stripped the `.git` from libigl's pre-downloaded
+> eigen cache, so in-image cmake's `git update` died (`fatal: not a git repository`).
+> Fixed: `compile.sh` fail-fasts + verifies both binaries, the Dockerfile re-checks
+> both, and `.dockerignore` excludes the libigl `.cache` so eigen downloads fresh.
+>
+> ‡‡ **Native build scope.** "Clean Ubuntu 22.04" means a host with the CUDA-12.4
+> toolkit and the dev packages installed (BUILD.md §B) — not this dev box. The native
+> *run* of the binary is confirmed on this host's RTX 4090; the native *build* is not
+> (missing toolkit/dev packages, no sudo).
 
 ---
 
