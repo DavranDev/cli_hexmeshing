@@ -160,6 +160,7 @@ to tackle it.
   (§4 table); corroborates the static map (stage 2 clearly the lowest, 13 %).
 - ✅ **libtorch device-knob scope** — the ~39 `.cuda()` calls are counted + classified
   (all mechanical) in [CPU_ONLY.md](CPU_ONLY.md) §2.
-- ✅ **CPU port of the two geomlib kernels** — scoped + estimated (SDF = trivial;
-  generalized-projection = medium) in [CPU_ONLY.md](CPU_ONLY.md) §3. Ties into
+- ✅ **CPU port of the two geomlib kernels** — scoped (CPU_ONLY.md §3) and now
+  **IMPLEMENTED + validated** (CPU_ONLY.md §5): `--device cpu` runs the whole
+  pipeline with no NVIDIA GPU (18 526 hexes, 0 inverted). Ties into
   [HEADLESS.md](HEADLESS.md) design A (no-Vulkan) since both remove GPU dependence.

@@ -55,10 +55,12 @@ INPUT_HOST="$1"; shift
 USER_CONFIG=""
 EXIT_AFTER=""
 HEADLESS=""
+DEVICE_FLAG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --exit-after) EXIT_AFTER="--exit-after"; shift ;;
     --headless)   HEADLESS="--headless"; shift ;;
+    --device)     DEVICE_FLAG="--device ${2:?--device needs cpu|cuda}"; shift 2 ;;
     -h|--help)    print_usage; exit 0 ;;
     *)
       if [[ -z "$USER_CONFIG" && -f "$1" ]]; then
@@ -204,7 +206,7 @@ if [[ -n "${HEX_LOCAL:-}" ]]; then
   source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh >/dev/null 2>&1 || true
   set -u
   ( cd /space/interactive-hex-meshing/bin/Release \
-      && ./hex --script "$CONTAINER_CONFIG" $EXIT_AFTER $HEADLESS ) 2>&1 | tee "$LOG_FILE"
+      && ./hex --script "$CONTAINER_CONFIG" $EXIT_AFTER $HEADLESS $DEVICE_FLAG ) 2>&1 | tee "$LOG_FILE"
   STATUS=${PIPESTATUS[0]}
 else
   docker run \
@@ -227,7 +229,7 @@ else
     docker-hexmesh \
     bash -c "source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh \
              && cd /space/interactive-hex-meshing/bin/Release \
-             && ./hex --script ${CONTAINER_CONFIG} ${EXIT_AFTER} ${HEADLESS}" \
+             && ./hex --script ${CONTAINER_CONFIG} ${EXIT_AFTER} ${HEADLESS} ${DEVICE_FLAG}" \
     2>&1 | tee "$LOG_FILE"
   STATUS=${PIPESTATUS[0]}
 fi

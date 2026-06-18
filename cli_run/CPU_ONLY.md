@@ -1,24 +1,34 @@
-# CPU-only feasibility — per-stage verdict + costed plan
+# CPU-only — implemented + per-stage verdict
+
+> **STATUS: IMPLEMENTED & VALIDATED (2026-06-18).** The full pipeline now runs with
+> **no NVIDIA GPU**: `hex --device cpu --headless` ran all four stages on a box with
+> **no `--gpus` at all** (software Vulkan via lavapipe for the view device, CPU for
+> all compute) → **18 526 hexes, 0 inverted** — identical to the GPU run. The default
+> `--device cuda` path is unchanged (regression-checked: 18 526 / 0). §§2–4 below are
+> the original costing; **§5 records what was actually built.**
 
 **Question (Ronald #13):** can the pipeline run without an NVIDIA GPU, and how much
-work is each stage? This document answers it per stage: what runs CPU-only **now**,
-what needs a small **device knob**, and what needs a **CUDA-kernel port** — with
-file-level effort estimates and a recommended path.
+work is each stage? Answer: **yes, all of it now** — via a `--device cpu` knob plus
+CPU ports of the two geomlib kernels (§5).
 
-It builds on the static GPU map ([DEPENDENCY_MAP.md](DEPENDENCY_MAP.md)) and the
-headless work ([HEADLESS.md](HEADLESS.md) §0). **No pipeline source was changed for
-this document** — §1 is an empirical run, §§2–3 are a costed scope.
+Builds on the static + runtime GPU map ([DEPENDENCY_MAP.md](DEPENDENCY_MAP.md)) and
+the headless work ([HEADLESS.md](HEADLESS.md) §0).
 
 ---
 
 ## 0. TL;DR
 
-| Stage | CPU-only status | What it takes |
+| Stage | CPU-only status | How |
 |---|---|---|
-| **S2 discretize** | ✅ **runs CPU-only NOW** (proven, §1) | nothing — zero CUDA in the stage |
-| **S0 deform** | 🟡 after the **device knob** | ~8 mechanical `.cuda()`→`.to(device)`; **no kernel** |
-| **S1 decompose** | 🟠 device knob **+ 1 kernel port** | port `point_tet_mesh_test` (SDF sign) — **trivial** |
-| **S3 hexahedralize** | 🔴 device knob **+ 1 kernel port** | port `generalized_projection` (nearest-face) — **medium**, perf risk |
+| **S2 discretize** | ✅ **runs CPU-only** (was always; proven §1) | zero CUDA in the stage |
+| **S0 deform** | ✅ **runs CPU-only** (device knob) | `--device cpu`; libtorch-only, no kernel |
+| **S1 decompose** | ✅ **runs CPU-only** (knob + SDF kernels) | `--device cpu`; CPU ports of `point_tet_mesh_test` **and** `generalized_projection` (the SDF uses both) |
+| **S3 hexahedralize** | ✅ **runs CPU-only** (knob + projection kernels) | `--device cpu`; CPU ports of `generalized_projection` (tri + tet) + Hausdorff |
+
+Run it: `./cli_run/run.sh <stage> <input> --headless --device cpu` (or
+`hex --headless --device cpu --script …`). **Perf caveat:** the CPU kernel loops are
+serial → the full `spot.mesh` chain takes ~6 min on CPU vs ~12 s on GPU (deform 5 s,
+decompose 76 s, discretize <1 s, hexahedralize 269 s). Correct, not fast.
 
 **Two independent axes, do not conflate** (same split as HEADLESS.md):
 - **(C) CUDA compute** — libtorch `.cuda()` + the two geomlib `.cu` kernels. This is
@@ -29,11 +39,8 @@ this document** — §1 is an empirical run, §§2–3 are a costed scope.
   *entirely* is LEVEL 2 / "design A" (HEADLESS.md §6), a separate, larger refactor,
   **not** required for CPU compute.
 
-**Recommended path:** S2 (now) → **S0 device knob** (cheapest, unlocks deform on
-CPU) → **S1 SDF kernel** (trivial) → **S3 projection kernel** (last, hardest).
-- **Minimum useful CPU deliverable:** S2 + S0 ⇒ *deform + discretize with no NVIDIA
-  GPU* (device knob only; ~0.5–1 day).
-- **Full CPU pipeline:** also needs the S1 and S3 kernel ports.
+**Original plan (now all done — see §5):** S2 (free) → S0 device knob → S1 SDF
+kernel → S3 projection kernel. The full CPU pipeline is implemented and validated.
 
 ---
 
@@ -156,3 +163,52 @@ top of the headless mode already shipped.
 
 > Caveat to set expectations: CPU-only is explicitly **not** a one-week deliverable.
 > The free win is S2; the cheap win is S0; S1/S3 are a scoped follow-on project.
+
+---
+
+## 5. Implementation + validation (2026-06-18) — DONE
+
+The §4 plan was implemented. **Additive, behind a default-`cuda` knob, so the GPU
+path is unchanged.**
+
+### Device knob (S0 + all libtorch tensors)
+- New `hex::ComputeDevice()` / `SetComputeDevice()` in `optim/torch_utils.{h,cpp}`
+  (function-local static, default `torch::kCUDA`).
+- `main.cpp` parses `--device cpu|cuda` and sets it before the pipeline; `run.sh`
+  forwards `--device`.
+- The ~39 hard-coded `.cuda()` across the 5 files + the one `device_{torch::kCUDA}`
+  → `.to(hex::ComputeDevice())`. `.cpu()` readbacks unchanged. No GPU-only `assert`
+  left on the compute path (`TetrahedralMesh::ComputeDistanceFieldGPU`,
+  `ComputeHausdorffDistance`).
+
+### Kernel CPU ports (S1 + S3) — same math, host loop
+The two geomlib `.cu` kernels got a CPU branch that **reuses the exact per-element
+device functions** (now marked `__host__ __device__` in `utils.cuh` / `vec_utils.cuh`
+/ the projection `.cu`), so CPU results match CUDA by construction. Each public
+function dispatches on `points.is_cuda()`:
+- `point_tet_mesh_test_cuda.cu` — point-in-tet sign (S1 SDF sign).
+- `generalized_projection_cuda.cu` — **triangle and tet** nearest-face projection.
+  *Correction to the earlier scoping:* S1's signed distance field uses **both** the
+  triangle projection (unsigned distance) and the point-in-tet test (sign), so S1
+  needed the projection port too — not just the SDF-sign kernel.
+- `TriangularProjectionInfo` + `TriangularMeshSampler` were already pure torch ops →
+  CPU-ready with no change.
+
+### Validation (no NVIDIA GPU at all — `docker run` **without** `--gpus`, lavapipe views)
+`hex --device cpu --headless`, full chain on `spot.mesh`:
+
+| Stage | rc | CPU time |
+|---|---|---|
+| deform (S0) | 0 | 5 s |
+| decompose (S1) | 0 | 76 s |
+| discretize (S2) | 0 | <1 s |
+| hexahedralize (S3) | 0 | 269 s |
+
+**Result: `total_hexes 18526, inverted_count 0`** (scaled-Jac mean 0.862) — identical
+to the GPU run. **GPU regression check:** default `--device cuda` headless smoke still
+PASSes (18 526 / 0).
+
+### Known follow-up (optional)
+The CPU kernel loops are **serial**. They are embarrassingly parallel over query
+points; switching to `at::parallel_for` (libtorch's thread pool, no `-fopenmp`/nvcc
+issue) would cut the ~6-min chain substantially. Deferred — correctness first.
