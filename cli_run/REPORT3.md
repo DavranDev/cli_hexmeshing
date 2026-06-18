@@ -110,12 +110,17 @@ Yes, but **small and additive — no model / optimizer / geometry algorithm was
 changed.** Full per-file breakdown + how to regenerate the diff:
 [SOURCE_CHANGES.md](SOURCE_CHANGES.md).
 
-- Footprint vs the pre-CLI baseline (`d0a904a`): **+682 / −33 across 21 files**
-  (was +590/−4/18 at Week 1; Week-3's `--headless` guards added the rest — all
-  additive `if (!headless)` startup guards, see §5).
-- New logic is isolated in `hex/src/cli/` (the script runner + metrics dumper);
-  everything else is thin public shims (`RunFromScript()`) that drive the **same**
-  code the GUI buttons drive, plus the surfaceless-Vulkan startup guards.
+- Footprint vs the pre-CLI baseline (`d0a904a`): **+967 / −121 across 32 files**
+  (`git -C interactive-hex-meshing diff --stat d0a904a`). It grew over the weeks,
+  all additively: +590/−4/18 (W1 CLI) → +682/−33/21 (W3 `--headless` guards) →
+  **+967/−121/32 (W3 CPU-only: the `--device` knob + the two geomlib kernel CPU
+  paths, §7)**.
+- Three additive buckets, **no model/optimizer/geometry algorithm changed**:
+  (1) new CLI logic isolated in `hex/src/cli/` (script runner + metrics) + thin
+  `RunFromScript()` shims that drive the **same** code the GUI buttons do;
+  (2) surfaceless-Vulkan `if (!headless)` startup guards (§5);
+  (3) the CPU-only device knob (`.cuda()`→`.to(ComputeDevice())`) + CPU branches in
+  the two `.cu` kernels that reuse the identical per-element math (§7).
 - Keeps future upstream merges low-risk.
 
 ---

@@ -4,10 +4,23 @@ This documents exactly what the CLI work touched in the upstream
 *interactive-hex-meshing* ("CDM") source, so the team can track modifications as
 we keep developing.
 
-**Short answer:** the original source *was* modified, but the changes are small
-and **additive** — new files plus thin wrappers that expose existing
-functionality to a script runner. **No model, optimizer, or geometry algorithm
-was changed.** The whole CLI effort is **+590 / −4 lines across 18 files**.
+**Short answer:** the original source *was* modified, but the changes are
+**additive** — new files plus thin wrappers/guards that expose existing
+functionality. **No model, optimizer, or geometry algorithm was changed.**
+
+**Current total vs the pre-CLI baseline `d0a904a`: +967 / −121 across 32 files**
+(`git -C interactive-hex-meshing diff --stat d0a904a`). It grew additively across
+the weeks:
+
+| Stage | Footprint | What was added |
+|---|---|---|
+| W1 — CLI runner | +590 / −4 / 18 files | new `hex/src/cli/` + thin `RunFromScript()` shims (table below) |
+| W3 — `--headless` | +682 / −33 / 21 files | surfaceless-Vulkan `if (!headless)` startup guards in `main.cpp`, `HexMeshingApp`, `vkoo/Application` |
+| W3 — CPU-only | **+967 / −121 / 32 files** | the `--device cpu\|cuda` knob (`.cuda()`→`.to(ComputeDevice())` across 5 files + `torch_utils`), and CPU branches in the two geomlib `.cu` kernels (`point_tet_mesh_test`, `generalized_projection`) that **reuse the identical per-element math** — see [CPU_ONLY.md](CPU_ONLY.md) §5 |
+
+The W3 additions are still additive and guarded (default `cuda`/GUI paths unchanged).
+The W1 per-file table below is the original CLI runner; the W3 files are listed in
+HEADLESS.md §0 and CPU_ONLY.md §5.
 
 ## Two repositories, two kinds of change
 
