@@ -298,8 +298,8 @@ its size matches the Docker build's. CUDA toolkit install took ~4 min.
 
 A prebuilt `hex` (Week-3 build, **with `--headless`**) is delivered two ways:
 
-1. **Docker image (recommended, portable):** `hexmesh-cli:week3` (devel) or
-   `hexmesh-cli:week3-slim` (15.2 GB — see §A2.6). Nothing to install but the
+1. **Docker image (recommended, portable):** `hexmesh-cli:latest` (devel) or
+   `hexmesh-cli:slim` (15.2 GB — see §A2.6). Nothing to install but the
    NVIDIA driver + container toolkit; run with `--gpus all`.
 2. **Bare binary:** published as a GitHub Release asset on the fork (mirroring W1's
    `cli-runner-v1`). The exact sha256 + provenance + env are in `dist/MANIFEST.md`.

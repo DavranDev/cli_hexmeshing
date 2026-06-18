@@ -137,11 +137,11 @@ output HDF5 feeds the next (see [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md)).
 ### 3C. Run on a server with NO screen (headless)
 
 **Recommended (Week-3): true `--headless` — no window, no X11, no xvfb.** The Week-3
-build adds a real headless mode (use the `hexmesh-cli:week3` image; design +
+build adds a real headless mode (use the `hexmesh-cli:latest` image; design +
 verification in [HEADLESS.md](HEADLESS.md)):
 ```bash
 docker run --gpus all --rm -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
-  -v "$(pwd)/output:/space/output" hexmesh-cli:week3 \
+  -v "$(pwd)/output:/space/output" hexmesh-cli:latest \
   bash -lc 'SMOKE_HEADLESS=1 ./cli_run/smoke_test.sh'
 ```
 

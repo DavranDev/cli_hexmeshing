@@ -231,7 +231,7 @@ do the deferred image slimming now that a GPU host can validate it.
 
 STEPS:   (T4 DONE 2026-06-18 on the local RTX 4090 — all real PASSes)
 [x] 4.1  Dockerfile.build SMOKE PASS: rebuilt the self-contained image from CURRENT
-         W3 source (incl. --headless) as `hexmesh-cli:week3` (--target build).
+         W3 source (incl. --headless) as `hexmesh-cli:latest` (--target build).
          GPU smoke PASS both ways: xvfb GUI = 18526 hexes/0 inverted; and
          SMOKE_HEADLESS=1 (no DISPLAY) = 18526/0 -> headless proven end-to-end in
          the shipping image. (smoke_test.sh gained a SMOKE_HEADLESS flag.)
@@ -244,7 +244,7 @@ STEPS:   (T4 DONE 2026-06-18 on the local RTX 4090 — all real PASSes)
          still needs cuda-toolkit-12-4 (sudo). Binary-on-host-GPU = proven.
 [x] 4.4  TWO-STAGE IMAGE SLIMMING: added a `runtime` stage (cuda RUNTIME base,
          copies only binaries + libtorch/vulkan runtime .so's + assets/shaders +
-         cli_run). `hexmesh-cli:week3-slim` = 15.2 GB vs 26.1 GB devel (-10.9 GB,
+         cli_run). `hexmesh-cli:slim` = 15.2 GB vs 26.1 GB devel (-10.9 GB,
          ~42%). ldd clean; headless smoke PASS (18526/0) out-of-the-box. Vulkan
          note: slim bundles lavapipe for the view device (NVIDIA Vulkan ICD needs
          the full GL stack the runtime base omits); CUDA compute stays on the GPU.
@@ -258,7 +258,7 @@ T5. FINAL BINARY   (1 h on the build host)   [GPU-HOST to confirm run]
 GOAL: ship a runnable `hex` built from the FINAL Week-3 source (incl. --headless).
          (T5 DONE 2026-06-18 — no source changes; extract + fingerprint + validate.)
 [x] 5.1  Extracted the canonical `hex` from the clean self-contained build
-         `hexmesh-cli:week3` (compiles final source incl. --headless) -> gitignored
+         `hexmesh-cli:latest` (compiles final source incl. --headless) -> gitignored
          dist/. sha256=dea52a45...3bed3, 9117344 bytes, `ldd` CLEAN (57 deps) in the
          devel env. Provenance: submodule b89d47b + 5 uncommitted W3 files (commit
          at T7). Env: CUDA 12.4 / driver>=550 (val. 580.159.03) / LibTorch 2.6.0+cu124

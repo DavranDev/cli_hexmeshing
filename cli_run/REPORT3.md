@@ -50,8 +50,8 @@ it previously masked a failed evocube build; `.dockerignore` no longer strips th
 | `runtime` (slim) | `cuda:12.4.1-cudnn-runtime` | **15.2 GB** | run-only (−42%) |
 
 ```bash
-docker build -f Dockerfile.build --target build   -t hexmesh-cli:week3 .       # devel
-docker build -f Dockerfile.build --target runtime  -t hexmesh-cli:week3-slim .  # slim
+docker build -f Dockerfile.build --target build   -t hexmesh-cli:latest .       # devel
+docker build -f Dockerfile.build --target runtime  -t hexmesh-cli:slim .  # slim
 ```
 
 ### 1.2 Native (no Docker)

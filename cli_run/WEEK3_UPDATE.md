@@ -60,8 +60,9 @@ device knob + a CUDA-kernel port (SDF trivial, projection medium). Recommended p
   (−42 %)**, headless smoke PASS out of the box. BUILD.md §A2.6.
 
 ### T5 — Final binary  ✅
-`hex` (with `--headless`) extracted from the clean self-contained build:
-sha256 `dea52a45…3bed3`, `ldd` clean. Provenance + env in `dist/MANIFEST.md`.
+`hex` (with `--headless` **and** `--device cpu|cuda`) extracted from the clean
+self-contained build: sha256 `2b32f0c1…dc67`, `ldd` clean. Provenance + env in
+`dist/MANIFEST.md`.
 Confirmed: the extracted binary runs the full headless smoke in a matching env it
 did **not** build (18 526 / 0). Delivery = Docker image (portable) or the bare
 binary as a GitHub Release asset (uploaded with the push).
@@ -76,9 +77,10 @@ items, cross-linking the detailed docs.
 ## 3. Original source — change footprint (refreshed)
 
 Still small and **additive — no model / optimizer / geometry algorithm changed**.
-Total vs the pre-CLI baseline `d0a904a`: **+682 / −33 across 21 files** (was
-+590/−4/18 at Week 1; the additive `--headless` startup guards account for the
-growth). Per-file breakdown: [SOURCE_CHANGES.md](SOURCE_CHANGES.md).
+Total vs the pre-CLI baseline `d0a904a`: **+967 / −121 across 32 files** (grew
+additively: +590/−4/18 at W1 → +682/−33/21 with the `--headless` guards → +967/−121/32
+with the CPU-only `--device` knob + the two geomlib kernel CPU ports). Per-file
+breakdown: [SOURCE_CHANGES.md](SOURCE_CHANGES.md).
 
 ---
 
@@ -109,4 +111,4 @@ growth). Per-file breakdown: [SOURCE_CHANGES.md](SOURCE_CHANGES.md).
 | CPU-only feasibility | [CPU_ONLY.md](CPU_ONLY.md) |
 | Source-change tracking | [SOURCE_CHANGES.md](SOURCE_CHANGES.md) |
 | Prebuilt binary + manifest | `dist/` (gitignored; ships as image / Release asset) |
-| Docker images | `hexmesh-cli:week3` (devel) · `hexmesh-cli:week3-slim` (15.2 GB) |
+| Docker images | `hexmesh-cli:latest` (devel) · `hexmesh-cli:slim` (15.2 GB) |
