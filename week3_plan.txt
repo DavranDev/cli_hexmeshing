@@ -282,18 +282,18 @@ T6. CONSOLIDATED REPORT   (0.5-1 day, absorb results as they land)   [HERE]
 --------------------------------------------------------------------------------
 GOAL: ONE report-ready document folding W1+W2+W3, mapped to Ronald's items. This
 is the "well documented for the report" ask.
-[x] 6.1  DONE 2026-06-18: assembled cli_run/REPORT3.md (the consolidated W1+W2+W3
+[x] 6.1  DONE 2026-06-18: assembled cli_run/REPORT_LATEST.md (the consolidated W1+W2+W3
          report) with all 8 sections + a coverage map of Ronald's 13 items + a doc
          map. Section 4 refreshed: source-change footprint now +682/-33 across 21
          files (was +590/-4/18; the additive --headless guards added 3 files), still
          no algorithm changed.
-[x] 6.2  Honest + cross-linked: REPORT3 cross-links BUILD/USAGE/SOURCE_CHANGES/
+[x] 6.2  Honest + cross-linked: REPORT_LATEST cross-links BUILD/USAGE/SOURCE_CHANGES/
          HEADLESS/DEPENDENCY_MAP/CPU_ONLY/MANIFEST rather than duplicating; notes the
          push is batched to week-end and the slim-image GUI caveat. No GPU-host
          items remain pending (all measured on the local RTX 4090).
 
 DONE WHEN: a reader can build, run, verify, and understand the GPU/CPU story from
-one document.   <-- MET (REPORT3.md).
+one document.   <-- MET (REPORT_LATEST.md).
 
 --------------------------------------------------------------------------------
 T7. WEEK-3 UPDATE + PUSH + RE-VERIFY   (1 h)
