@@ -4,10 +4,14 @@ HOW TO RUN — interactive-hex-meshing CLI (all four pipeline stages)
 
 Four subcommands are available, one per pipeline stage:
 
-    ./cli_run/run.sh deform         <input.mesh|input.hdf5>  [config.yaml]  [--exit-after]
-    ./cli_run/run.sh decompose      <input.hdf5>             [config.yaml]  [--exit-after]
-    ./cli_run/run.sh discretize     <input.hdf5>             [config.yaml]  [--exit-after]
-    ./cli_run/run.sh hexahedralize  <input.hdf5>             [config.yaml]  [--exit-after]
+    ./cli_run/run.sh deform         <input.mesh|input.hdf5>  [config.yaml]  [options]
+    ./cli_run/run.sh decompose      <input.hdf5>             [config.yaml]  [options]
+    ./cli_run/run.sh discretize     <input.hdf5>             [config.yaml]  [options]
+    ./cli_run/run.sh hexahedralize  <input.hdf5>             [config.yaml]  [options]
+
+[options] are the display + compute flags documented under "DISPLAY & COMPUTE
+MODES" and "COMMON OPTIONS" below: [--exit-after | --headless] and
+[--device cpu|cuda]. You never pass a Docker image name — see "DOCKER IMAGE".
 
 There is no "full" subcommand. To run the whole pipeline, run the stages in
 order and feed each stage_N_*.hdf5 into the next (see "FULL CHAIN" below).
@@ -198,6 +202,67 @@ The final hexahedralization run directory holds result.mesh + result_metrics.yam
 
 
 ================================================================================
+DISPLAY & COMPUTE MODES (headless / gui / gpu / cpu)
+================================================================================
+
+There are two INDEPENDENT axes. Combine any display mode with any compute
+device — they do not interact.
+
+  Display axis (how the GUI behaves):
+    (none)          GUI window opens and STAYS open for inspection. Needs X11
+                    ($DISPLAY). This is the default.
+    --exit-after    GUI window opens, runs the stage, then auto-closes. Still
+                    needs X11. Good for batch jobs.
+    --headless      NO window/surface at all; no X11 needed. Runs the stage and
+                    exits. Implies --exit-after. Use on servers / SSH sessions.
+
+  Compute axis (where math runs):
+    --device cuda   NVIDIA GPU (the default; may be omitted).
+    --device cpu    CPU-only, no NVIDIA GPU required. Correct but slower (full
+                    spot.mesh chain ~6 min on CPU vs ~12 s on GPU). Still needs
+                    *a* Vulkan ICD for the view device even when headless — a
+                    real GPU ICD, or software Mesa lavapipe on a driverless box.
+
+Examples (any stage; deform shown):
+    M=output/input_examples/stage_0_deformation/toy_plane.mesh
+
+    # GUI, stays open (default GPU)
+    ./cli_run/run.sh deform "$M"
+    # GUI, auto-close
+    ./cli_run/run.sh deform "$M" --exit-after
+    # Headless, GPU
+    ./cli_run/run.sh deform "$M" --headless
+    # Headless, CPU-only
+    ./cli_run/run.sh deform "$M" --headless --device cpu
+
+For a CPU-only or GUI FULL CHAIN, take the four lines under "FULL CHAIN" above
+and append the same flags to every line (e.g. add `--device cpu`, or swap
+`--exit-after` for `--headless`).
+
+
+================================================================================
+DOCKER IMAGE — chosen automatically, not per command
+================================================================================
+
+You do NOT name a Docker image when calling run.sh. The host-side path hardcodes
+the `docker-hexmesh` environment image (run.sh) and mounts the repo into it, so
+every `./cli_run/run.sh ...` above uses that image automatically. The only
+prerequisite is that `docker-hexmesh` exists (build it per cli_run/BUILD.md).
+
+The image choice matters ONLY on the self-contained-image path, where YOU write
+the `docker run` wrapper and set HEX_LOCAL=1 so run.sh runs `hex` directly inside
+the image (no nested docker):
+
+    docker run --rm --runtime=nvidia --gpus all \
+      -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
+      -v "$(pwd)/output:/space/output" \
+      hexmesh-cli:slim ./cli_run/smoke_test.sh
+
+Pick `hexmesh-cli:latest` (devel, GUI-capable) or `hexmesh-cli:slim` (runtime,
+headless CPU/GPU; bundles lavapipe). See cli_run/BUILD.md for building them.
+
+
+================================================================================
 COMMON OPTIONS
 ================================================================================
 
@@ -205,6 +270,12 @@ COMMON OPTIONS
                     finishes. Use this for batch jobs and headless-ish runs.
                     Without it, the window stays open for visual inspection
                     until you close it manually.
+
+--headless          Run with NO GUI window/surface at all (no X11 needed).
+                    Runs the stage and exits; implies --exit-after.
+
+--device cpu|cuda   Select the compute device. Default is `cuda` (NVIDIA GPU);
+                    `cpu` runs without a GPU (see DISPLAY & COMPUTE MODES).
 
 To override the default parameters globally (so future runs use your tweaks
 without naming a custom YAML each time), edit the templates in cli_run/configs/
