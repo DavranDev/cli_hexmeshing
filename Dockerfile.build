@@ -45,13 +45,11 @@ WORKDIR /space/lib
 COPY libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip /tmp/libtorch.zip
 RUN unzip -q /tmp/libtorch.zip -d /space/lib && rm /tmp/libtorch.zip
 
-# Vulkan SDK: use the PROVEN 1.3.268.0 — the version compile.sh + run.sh + the
-# docker-hexmesh image were validated against.
-# NOTE: the repo-root `vulkansdk.tar.xz` is a DIFFERENT, untested version
-# (1.4.341.1) and is deliberately NOT used. This archive is repackaged from the
-# proven lib/vulkan-sdk-1.3.268.0 tree; its top-level dir is already
-# `vulkan-sdk-1.3.268.0`, so no rename is needed.
-# (LunarG's direct download link for 1.3.268.0 now 404s, so we don't wget it.)
+# Vulkan SDK: the old 1.3.268 download is no longer published by LunarG.  The
+# setup runbook downloads the current official SDK, validates it, and repacks
+# its tree under this compatibility directory because compile.sh/run.sh retain
+# the historical hard-coded path.  The archive's top-level directory is already
+# `vulkan-sdk-1.3.268.0`, so no rename is needed here.
 COPY vulkan-sdk-1.3.268.0.tar.xz /tmp/vulkan-sdk.tar.xz
 RUN tar -xf /tmp/vulkan-sdk.tar.xz -C /space/lib && rm /tmp/vulkan-sdk.tar.xz
 
@@ -103,7 +101,10 @@ RUN bash /space/compile.sh \
 ENV VULKAN_SDK=/space/lib/vulkan-sdk-1.3.268.0/x86_64
 ENV PATH=$VULKAN_SDK/bin:$PATH
 ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib:$VULKAN_SDK/lib
-ENV VK_ADD_LAYER_PATH=$VULKAN_SDK/etc/vulkan/explicit_layer.d
+# Use VK_LAYER_PATH for compatibility with both the SDK loader and Ubuntu's
+# older system loader.  The current LunarG archive stores its layer manifests
+# under share/, not etc/.
+ENV VK_LAYER_PATH=$VULKAN_SDK/share/vulkan/explicit_layer.d
 
 # output/ is created at run time by the pipeline; ensure it exists if not mounted.
 RUN mkdir -p /space/output
@@ -157,7 +158,7 @@ COPY --from=build /space/cli_run                          /space/cli_run
 ENV VULKAN_SDK=/space/lib/vulkan-sdk-1.3.268.0/x86_64
 ENV PATH=$VULKAN_SDK/bin:$PATH
 ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib:$VULKAN_SDK/lib
-ENV VK_ADD_LAYER_PATH=$VULKAN_SDK/etc/vulkan/explicit_layer.d
+ENV VK_LAYER_PATH=$VULKAN_SDK/share/vulkan/explicit_layer.d
 
 RUN mkdir -p /space/output
 

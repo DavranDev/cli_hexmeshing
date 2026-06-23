@@ -29,7 +29,7 @@ Status date: 2026-06-18. Branch `cli-runner` (parent `cli_hexmeshing` + submodul
 | 3 | End-to-end Dockerfile for the updated source | ✅ | §2, `Dockerfile.build`, BUILD.md §A2 |
 | 4 | Well-documented for the report | ✅ | this doc + the doc map (§12) |
 | 5 | Provide the compiled binary | ✅ | §2.3, `dist/MANIFEST.md` |
-| 6 | Simplest usage + I/O behaviour | ✅ | §3–§4, [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md) |
+| 6 | Simplest usage + I/O behaviour | ✅ | §3–§4, [how_to_run.txt](how_to_run.txt) |
 | 7 | Test cases + verify-after-change | ✅ | §5, `cli_run/smoke_test.sh` |
 | 8 | Track original-source changes | ✅ | §6, [SOURCE_CHANGES.md](SOURCE_CHANGES.md) |
 | 9 | Keep under Git | ✅ (push at week end) | §11 |
@@ -122,10 +122,11 @@ gaps: [BUILD.md §B](BUILD.md). (Note: you do **not** need a separate cuDNN pack
 LibTorch ships its own.)
 
 ### 2.3 Prebuilt binary
-`hex` (Week-3, with `--headless`) — sha256 `dea52a45…3bed3`, 9.1 MB, `ldd` clean.
+`hex` (current GUI-sync + headless build) — sha256 `c30d98f0…3d30c0`, 9.1 MB.
 Delivery: **Docker image (portable, recommended)** or the bare binary as a GitHub
-Release asset (uploaded at week-end with the push). Provenance + exact env in
-`dist/MANIFEST.md`; running instructions in BUILD.md §C. Runs as-is **only** on a
+Release asset (uploaded at week-end with the push). Provenance + exact checksums
+are in `SETUP_FROM_SCRATCH.md`; running instructions are in BUILD.md §C. It runs
+as-is **only** on a
 matching env (CUDA 12.4 + driver ≥550 + LibTorch 2.6.0+cu124 + Vulkan 1.3.268.0).
 
 ---
@@ -135,27 +136,23 @@ matching env (CUDA 12.4 + driver ≥550 + LibTorch 2.6.0+cu124 + Vulkan 1.3.268.
 You need a machine with an **NVIDIA GPU + driver** (supporting CUDA 12.4) to *run* the
 tool — it does the math on the GPU. Builds don't, but runs do.
 
-For the on-screen GUI path, first let the container use your screen:
-```bash
-xhost +local:root
-```
-
 ### 3A. The one-command test (recommended first run)
-This runs all four stages on the bundled `spot` model and checks the result:
+This runs all four stages on the bundled `spot` model in true headless mode and
+checks the result. It needs no X11 authorization, `DISPLAY`, or GLFW window:
 ```bash
-docker run --runtime=nvidia --gpus all --rm \
-  -e DISPLAY=$DISPLAY -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
-  -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+docker run --rm --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=all \
+  -e HEX_LOCAL=1 \
+  -e SMOKE_HEADLESS=1 \
   -v "$(pwd)/output:/space/output" \
   hexmesh-cli:latest ./cli_run/smoke_test.sh
 ```
 **What you should see:** `PASS: valid hex mesh (18526 hexes, 0 inverted)`.
 Results are written under `output/runs/spot/`.
 
-> Two flags matter: `NVIDIA_DRIVER_CAPABILITIES=all` lets the GPU's graphics driver into
-> the container, and `HEX_LOCAL=1` tells the runner to execute the program directly
-> inside the image. (Do **not** also mount `/usr/share/vulkan` — it pulls in host-only
-> files the container doesn't have and the run fails.)
+> `NVIDIA_DRIVER_CAPABILITIES=all` exposes the GPU driver, `HEX_LOCAL=1` executes
+> `hex` directly inside the image, and `SMOKE_HEADLESS=1` avoids all X11/GLFW and
+> presentation-queue dependencies. Do **not** mount host Vulkan files.
 
 ### 3B. Run a single stage
 Same wrapper, one subcommand at a time (file in → results out):
@@ -167,7 +164,7 @@ docker run --runtime=nvidia --gpus all --rm \
   ./cli_run/run.sh deform interactive-hex-meshing/assets/tutorial/spot.mesh --exit-after
 ```
 Subcommands: `deform` → `decompose` → `discretize` → `hexahedralize`. Each one's output
-HDF5 feeds the next (see §4 and [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md)).
+HDF5 feeds the next (see §4 and [how_to_run.txt](how_to_run.txt)).
 
 ### 3C. Run on a server with NO screen (headless)
 
@@ -202,7 +199,7 @@ written to `result_metrics.yaml` in the run folder.
 ## 4. Usage + I/O behaviour
 
 Each pipeline stage is one subcommand; I/O is file-based. Details + the full 4-stage
-chain: [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md).
+chain: [how_to_run.txt](how_to_run.txt).
 
 ```bash
 ./cli_run/run.sh deform        <input.mesh|.hdf5>  --headless   # Stage 0
@@ -223,15 +220,15 @@ per-stage YAML in `cli_run/configs/` (copy + edit to tune).
 Hard pass criterion: **`inverted_count == 0` and `total_hexes > 0`.**
 
 ```bash
-./cli_run/smoke_test.sh                       # GUI/--exit-after path (needs X11/xvfb)
-SMOKE_HEADLESS=1 ./cli_run/smoke_test.sh      # headless (no display)
+SMOKE_HEADLESS=1 ./cli_run/smoke_test.sh      # recommended: headless, no display
+./cli_run/smoke_test.sh                       # GUI/--exit-after compatibility test
 ```
 
 **Verified 2026-06-18 (RTX 4090):** PASS, **18 526 hexes, 0 inverted** on `spot.mesh` —
 identically via GUI(xvfb), `--headless`, the slim image, and the bare extracted binary
 in a matching env it did not build. Quality (scaled-Jacobian) mean ≈ 0.86. After any
-code change: rebuild (§2) then run the smoke; see USAGE_AND_TESTS.md "Verifying after you
-modify the code".
+code change: rebuild (§2) then run the smoke (§5, `cli_run/smoke_test.sh`); usage and
+chaining details live in [how_to_run.txt](how_to_run.txt).
 
 ---
 
@@ -240,16 +237,17 @@ modify the code".
 Yes, but **small and additive — no model / optimizer / geometry algorithm was changed.**
 Full per-file breakdown + how to regenerate the diff: [SOURCE_CHANGES.md](SOURCE_CHANGES.md).
 
-- Footprint vs the pre-CLI baseline (`d0a904a`): **+967 / −121 across 32 files**
+- Footprint vs the pre-CLI baseline (`d0a904a`): **+1003 / −133 across 34 files**
   (`git -C interactive-hex-meshing diff --stat d0a904a`). It grew over the weeks, all
   additively: +590/−4/18 (W1 CLI) → +682/−33/21 (W3 `--headless` guards) →
-  **+967/−121/32 (W3 CPU-only: the `--device` knob + the two geomlib kernel CPU paths, §9)**.
-- Three additive buckets, **no model/optimizer/geometry algorithm changed**:
+  +967/−121/32 (W3 CPU-only) → **+1003/−133/34 (GUI synchronization fix)**.
+- Four focused buckets, **no model/optimizer/geometry algorithm changed**:
   (1) new CLI logic isolated in `hex/src/cli/` (script runner + metrics) + thin
   `RunFromScript()` shims that drive the **same** code the GUI buttons do;
   (2) surfaceless-Vulkan `if (!headless)` startup guards (§7);
   (3) the CPU-only device knob (`.cuda()`→`.to(ComputeDevice())`) + CPU branches in the
-  two `.cu` kernels that reuse the identical per-element math (§9).
+  two `.cu` kernels that reuse the identical per-element math (§9); and
+  (4) a Vulkan acquire-fence fix that keeps the standalone GUI render loop alive.
 - Keeps future upstream merges low-risk.
 
 ---
@@ -289,6 +287,27 @@ call chains: [DEPENDENCY_MAP.md](DEPENDENCY_MAP.md).
 
 Stage 2's low utilisation is the runtime confirmation that it does no CUDA compute
 (decisively cross-checked in §9).
+
+### 8.1 Per-stage timing — GPU vs CPU (measured)
+
+Wall-clock of the `hex` process per stage (Vulkan/libtorch init → stage done), headless,
+`spot.mesh` (2 332-vertex tet → 18 526 hexes), on this box (RTX 4090 vs `--device cpu`).
+Docker container start-up is excluded (≈ equal for both modes). Reproduce with
+`./cli_run/smoke_test.sh` (GPU) and `SMOKE_DEVICE=cpu ./cli_run/smoke_test.sh` (CPU).
+
+| Stage | GPU (cuda) | CPU (`--device cpu`) | CPU ÷ GPU |
+|---|---:|---:|---:|
+| 0 deform | 3.6 s | 9.6 s | 2.7× |
+| 1 decompose | 1.5 s | 76.7 s | 51× |
+| 2 discretize | 0.6 s | 0.6 s | 1.0× |
+| 3 hexahedralize | 2.8 s | 267.7 s | 96× |
+| **Total** | **8.5 s** | **354.6 s** | **≈ 42×** |
+
+The timings track the dependency map exactly: **S2** (no CUDA compute) is identical on CPU;
+**S0** (libtorch only, no kernel) pays only a modest 2.7×; **S1** and **S3** — the two stages
+backed by custom CUDA kernels — blow up to 51× / 96× when forced onto the CPU fallback, which
+is precisely why §9 flags those two as needing a kernel port rather than a mechanical device
+knob.
 
 ---
 
@@ -346,14 +365,13 @@ the *driver* is installed once on the host by the machine owner (e.g.
 | Topic | Doc |
 |---|---|
 | Build (Docker one-step + native + slim) | [BUILD.md](BUILD.md) |
-| Usage + examples + I/O | [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md) |
+| Usage + examples + I/O | [how_to_run.txt](how_to_run.txt) |
 | Test / verify | `cli_run/smoke_test.sh` |
 | Original-source change tracking | [SOURCE_CHANGES.md](SOURCE_CHANGES.md) |
 | Headless design + status | [HEADLESS.md](HEADLESS.md) |
 | GPU/Vulkan/CUDA per-stage map | [DEPENDENCY_MAP.md](DEPENDENCY_MAP.md) |
 | CPU-only feasibility + plan | [CPU_ONLY.md](CPU_ONLY.md) |
 | Prebuilt binary provenance | `dist/MANIFEST.md` |
-| Week-2 status update (T1–T4) | [WEEK2_UPDATE.md](WEEK2_UPDATE.md) |
 | Week-1 report (superseded by this) | [REPORT.md](REPORT.md) |
 
 **Bottom line:** a reader can build (Docker or native), run any stage or the full chain

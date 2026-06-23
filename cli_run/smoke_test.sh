@@ -10,10 +10,14 @@
 #   ./cli_run/smoke_test.sh                 # uses interactive-hex-meshing/assets/tutorial/spot.mesh
 #   ./cli_run/smoke_test.sh <input.mesh>    # use a different tet mesh (Stage-0 input)
 #
-# Requires the same Docker + NVIDIA + Vulkan + X11 setup the GUI/CLI needs.
+# The default is true headless, so no X11 display or authorization is needed.
+# Set SMOKE_GUI=1 only when intentionally testing the GUI/--exit-after path.
 # Exits 0 and prints PASS if the pipeline produces a valid (non-inverted) hex
 # mesh; exits 1 and prints FAIL otherwise.
-set -uo pipefail
+# Stop at the first failed stage. Without `-e`, a failure inside one of the
+# command substitutions below was reported, but the script continued and
+# emitted misleading follow-on errors for stages whose inputs did not exist.
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -22,12 +26,20 @@ cd "$REPO_ROOT"
 INPUT="${1:-interactive-hex-meshing/assets/tutorial/spot.mesh}"
 RUN="./cli_run/run.sh"
 
-# Display mode: default is the GUI --exit-after path (needs an X display, real or
-# xvfb). Set SMOKE_HEADLESS=1 to run true headless (no window/surface/X11 at all).
-RUN_FLAG="--exit-after"
-if [[ "${SMOKE_HEADLESS:-0}" == "1" ]]; then
-  RUN_FLAG="--headless"
-  echo "=== smoke test: HEADLESS mode (no GUI window / no X11) ===" >&2
+# Display mode: default to true headless so the verification command is reliable
+# on local workstations, SSH sessions, and servers. GUI smoke is opt-in.
+RUN_FLAGS=(--headless)
+echo "=== smoke test: HEADLESS mode (no GUI window / no X11) ===" >&2
+if [[ "${SMOKE_GUI:-0}" == "1" ]]; then
+  RUN_FLAGS=(--exit-after)
+  echo "=== smoke test: GUI auto-close mode (X11 required) ===" >&2
+fi
+
+# Compute device: default leaves it unset so run.sh/hex use their own default
+# (cuda). Set SMOKE_DEVICE=cpu to validate the CPU-only path (slower).
+if [[ -n "${SMOKE_DEVICE:-}" ]]; then
+  RUN_FLAGS+=(--device "$SMOKE_DEVICE")
+  echo "=== smoke test: compute device = $SMOKE_DEVICE ===" >&2
 fi
 
 if [[ ! -f "$INPUT" ]]; then
@@ -44,7 +56,7 @@ EXAMPLE="$(basename "${INPUT%.*}")"
 run_stage() {
   local cmd="$1" stage="$2" in="$3"
   echo "==> $cmd  ($in)" >&2
-  if ! "$RUN" "$cmd" "$in" "$RUN_FLAG" >/dev/null 2>&1; then
+  if ! "$RUN" "$cmd" "$in" "${RUN_FLAGS[@]}" >/dev/null 2>&1; then
     echo "FAIL: '$cmd' returned non-zero" >&2
     exit 1
   fi

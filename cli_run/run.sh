@@ -4,7 +4,10 @@
 # interactive-hex-meshing GUI from the command line.
 #
 # Usage:
-#   ./cli_run/run.sh <subcommand> <input.hdf5> [config.yaml] [--exit-after]
+#   ./cli_run/run.sh <subcommand> <input.mesh|input.hdf5> [config.yaml] [options]
+#
+#   [options]:  [--exit-after | --headless]   display mode (default: GUI stays open)
+#               [--device cpu|cuda]           compute device (default: cuda / GPU)
 #
 # Subcommands:
 #   deform           run Stage 0 only
@@ -12,16 +15,23 @@
 #   discretize       run Stage 2 only
 #   hexahedralize    run Stage 3 only
 #
-# The <input.hdf5> argument is REQUIRED on every invocation.
+# The input argument is REQUIRED on every invocation. `deform` also accepts a
+# raw .mesh/.vtk tet mesh; stages 1-3 (decompose/discretize/hexahedralize)
+# require an HDF5 produced by the previous stage.
 # The output run directory under output/runs/ is generated automatically.
 # All parameters are read from the YAML config — to tune them, copy a default
 # from cli_run/configs/, edit the values, and pass your file as [config.yaml].
 #
 # Optional flags:
-#   --exit-after     close the GUI window when the script finishes
-#   --headless       run with NO GUI window/surface at all (no X11 needed);
-#                    runs the stage and exits. Implies --exit-after.
-#   -h | --help      show this message
+#   --exit-after        close the GUI window when the script finishes
+#   --headless          run with NO GUI window/surface at all (no X11 needed);
+#                       runs the stage and exits. Implies --exit-after.
+#   --device cpu|cuda   compute device for the pipeline math. Default is cuda
+#                       (the NVIDIA GPU); cpu runs with no GPU but is much
+#                       slower (full chain ~6 min CPU vs ~12 s GPU). Pair
+#                       --device cpu with --headless to run on a box with no
+#                       GPU at all (software-Vulkan / lavapipe fallback).
+#   -h | --help         show this message
 #
 # Outputs land under:
 #     output/runs/<example>/<stage>_<YYYY_MM_DD>_<NNN>/
@@ -205,6 +215,15 @@ if [[ -n "${HEX_LOCAL:-}" ]]; then
   set +u
   source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh >/dev/null 2>&1 || true
   set -u
+  # setup-env.sh prefers VK_ADD_LAYER_PATH, but Ubuntu 22.04's older Vulkan
+  # loader does not reliably discover the SDK validation layer through it.
+  # Point directly at the SDK's actual manifest directory for both loaders.
+  # Guard on VULKAN_SDK: the slim/runtime image ships no Vulkan SDK (it uses
+  # lavapipe and needs no validation layer), so setup-env.sh is absent and
+  # VULKAN_SDK stays unset — referencing it unguarded would abort under `set -u`.
+  if [[ -n "${VULKAN_SDK:-}" ]]; then
+    export VK_LAYER_PATH="${VULKAN_SDK}/share/vulkan/explicit_layer.d"
+  fi
   ( cd /space/interactive-hex-meshing/bin/Release \
       && ./hex --script "$CONTAINER_CONFIG" $EXIT_AFTER $HEADLESS $DEVICE_FLAG ) 2>&1 | tee "$LOG_FILE"
   STATUS=${PIPESTATUS[0]}
