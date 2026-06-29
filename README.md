@@ -110,6 +110,7 @@ cd /space/interactive-hex-meshing/bin/Release
 <summary>Tips for Vulkan loading errors.</summary>
 Vulkan error is common in the Docker container. Please check the following tips to quickly solve the problems.
 - Source the vulkan sdk environment in the container. `source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh
+- Recompiling: always rebuild with `. ./compile.sh`, which sources the bundled SDK above *before* running cmake/make. Invoking cmake/make directly without that environment is what makes a **recompile** fail with Vulkan / `find_package(Vulkan)` errors even though the first build succeeded. Do **not** `apt install` a system Vulkan into the container as a workaround — a mismatched system loader/ICD can shadow the bundled SDK and cause ICD/loader crashes when you later run `hex`.
 - `vulkaninfo --summary` in the container should return basic profile. There should be no error messages in the beginning lines about ICD, drivers or loading issues.
 - If there is a ICD error, try to move unrelated ICD json files in `/usr/share/vulkan/icd.d/` to other folders. In my cases, I moved `nouveau_icd.json` and `intel_icd.json` to other folders, while only keep `nvidia_icd.json` in the folder.
 - Check the docker run command to make sure the Vulkan library is properly loaded by mapping.
