@@ -7,25 +7,23 @@
 # no manual compile step.
 #
 # Build:
-#   docker build -f Dockerfile.build -t hexmesh-cli:week2 .
-# Run the smoke test (needs an NVIDIA GPU + driver + X11 at RUN time only):
+#   docker build -f Dockerfile.build --target build -t hexmesh-cli:latest .
+# Run the headless smoke test (needs a Vulkan ICD; CUDA mode needs an NVIDIA GPU):
 #   docker run --runtime=nvidia --gpus all --rm \
-#     -e DISPLAY -e HEX_LOCAL=1 \
-#     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-#     -v /usr/share/vulkan:/usr/share/vulkan:ro \
+#     -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
 #     -v "$(pwd)/output:/space/output" \
-#     hexmesh-cli:week2 ./cli_run/smoke_test.sh
+#     hexmesh-cli:latest ./cli_run/smoke_test.sh
 #
 # GPU note: the GPU is NOT needed to BUILD (nvcc compiles without a device).
-# A GPU + Vulkan + an X11 display are needed only at `docker run` time.
+# A display is needed only for GUI/--exit-after runs. Headless mode still needs
+# a Vulkan ICD; CUDA compute also needs the host NVIDIA driver at docker run time.
 #
 # Source strategy: we COPY the checked-out source (matches the exact commit under
 # test, and the forks may need auth — we never bake a token into a layer). The
 # documented alternative is `git clone` of the public repo inside the build.
-# Library strategy: we COPY the already-downloaded archives that setup.sh placed
-# at the repo root and extract them in a throwaway stage, so the ~2.9 GB archives
-# never bloat a layer in the final image. Documented fallback: wget them (see the
-# commented lines in the `libs` stage).
+# Library strategy: the image downloads LibTorch + the current official LunarG
+# Vulkan SDK in a throwaway stage, then copies only the extracted runtime trees
+# forward. No local Vulkan tarball is required in the build context.
 # ============================================================================
 
 # ---------------------------------------------------------------------------
@@ -35,23 +33,32 @@
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS libs
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends unzip xz-utils \
+ && apt-get install -y --no-install-recommends ca-certificates wget unzip xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /space/lib
 
-# LibTorch: COPY the (correct, ~2.6 GB) archive from the build context to avoid a
-# large re-download. It extracts to ./libtorch.
-COPY libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip /tmp/libtorch.zip
-RUN unzip -q /tmp/libtorch.zip -d /space/lib && rm /tmp/libtorch.zip
+ARG LIBTORCH_URL=https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip
+ARG VULKAN_SDK_URL=https://sdk.lunarg.com/sdk/download/latest/linux/vulkan-sdk.tar.xz
 
-# Vulkan SDK: the old 1.3.268 download is no longer published by LunarG.  The
-# setup runbook downloads the current official SDK, validates it, and repacks
-# its tree under this compatibility directory because compile.sh/run.sh retain
-# the historical hard-coded path.  The archive's top-level directory is already
-# `vulkan-sdk-1.3.268.0`, so no rename is needed here.
-COPY vulkan-sdk-1.3.268.0.tar.xz /tmp/vulkan-sdk.tar.xz
-RUN tar -xf /tmp/vulkan-sdk.tar.xz -C /space/lib && rm /tmp/vulkan-sdk.tar.xz
+RUN wget -O /tmp/libtorch.zip "$LIBTORCH_URL" \
+ && unzip -q /tmp/libtorch.zip -d /space/lib \
+ && rm /tmp/libtorch.zip \
+ && test -d /space/lib/libtorch
+
+RUN set -eux; \
+    mkdir -p /tmp/vulkan-sdk; \
+    wget -O /tmp/vulkan-sdk.tar.xz "$VULKAN_SDK_URL"; \
+    tar -xf /tmp/vulkan-sdk.tar.xz -C /tmp/vulkan-sdk; \
+    top_dir="$(find /tmp/vulkan-sdk -mindepth 1 -maxdepth 1 -type d | head -n 1)"; \
+    test -n "$top_dir"; \
+    mv "$top_dir" /space/lib/vulkan-sdk; \
+    test -f /space/lib/vulkan-sdk/setup-env.sh; \
+    test -f /space/lib/vulkan-sdk/x86_64/lib/libVkLayer_khronos_validation.so; \
+    find /space/lib/vulkan-sdk/x86_64/share/vulkan/explicit_layer.d \
+      -name '*khronos_validation*.json' -print -quit | grep -q .; \
+    ln -s vulkan-sdk /space/lib/vulkan-sdk-1.3.268.0; \
+    rm -rf /tmp/vulkan-sdk /tmp/vulkan-sdk.tar.xz
 
 # ---------------------------------------------------------------------------
 # Stage 2 (build): the build + self-contained devel image. Same proven base +
@@ -68,7 +75,7 @@ WORKDIR /space
 # --- system + python dependencies (identical to the proven `Dockerfile`) ---
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      git cmake build-essential python3 python3-pip \
+      git cmake build-essential patch python3 python3-pip \
       libblas-dev liblapack-dev libgl1-mesa-dev \
       libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
       libhdf5-serial-dev vulkan-tools \
@@ -79,13 +86,14 @@ RUN pip install --no-cache-dir numpy meshio open3d h5py
 COPY --from=libs /space/lib /space/lib
 
 # --- source from the build context (NOT bind-mounted) ---
-# evocube + the CDM source + the build script + the CLI wrapper. The image is
+# evocube + the CDM source + the build script + the CLI wrapper + local patches. The image is
 # laid out at /space exactly like run_docker.sh's mounts, so compile.sh and the
 # run.sh paths (/space/output/...) work unchanged.
 COPY evocube/                  /space/evocube/
 COPY interactive-hex-meshing/  /space/interactive-hex-meshing/
 COPY compile.sh                /space/compile.sh
 COPY cli_run/                  /space/cli_run/
+COPY patches/                  /space/patches/
 
 # --- compile evocube + hex in one shot (the same script the manual flow runs) ---
 # compile.sh now fails loudly on any build error AND verifies both binaries, so a
@@ -98,9 +106,10 @@ RUN bash /space/compile.sh \
 
 # --- runtime environment (mirrors vulkan setup-env.sh + libtorch lib dir) so the
 #     baked binary resolves its shared libs without any extra sourcing ---
-ENV VULKAN_SDK=/space/lib/vulkan-sdk-1.3.268.0/x86_64
+ENV VULKAN_SDK_ROOT=/space/lib/vulkan-sdk
+ENV VULKAN_SDK=$VULKAN_SDK_ROOT/x86_64
 ENV PATH=$VULKAN_SDK/bin:$PATH
-ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib:$VULKAN_SDK/lib
+ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib:$VULKAN_SDK/lib/VulkanLoader/lib:$VULKAN_SDK/lib
 # Use VK_LAYER_PATH for compatibility with both the SDK loader and Ubuntu's
 # older system loader.  The current LunarG archive stores its layer manifests
 # under share/, not etc/.
@@ -144,7 +153,7 @@ ENV VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
 # Shared libs the baked binary links: LibTorch runtime .so's + the Vulkan SDK
 # loader/layers. (The LibTorch *headers* and CMake configs are NOT copied.)
 COPY --from=build /space/lib/libtorch/lib                 /space/lib/libtorch/lib
-COPY --from=build /space/lib/vulkan-sdk-1.3.268.0/x86_64  /space/lib/vulkan-sdk-1.3.268.0/x86_64
+COPY --from=build /space/lib/vulkan-sdk                    /space/lib/vulkan-sdk
 
 # Compiled binaries + the assets/shaders they load + the CLI wrappers. No source,
 # no CMake build trees (only evocube's built binary dir is carried).
@@ -155,9 +164,10 @@ COPY --from=build /space/evocube/build                    /space/evocube/build
 COPY --from=build /space/cli_run                          /space/cli_run
 
 # Same runtime env as the devel image so the binary resolves its libs unchanged.
-ENV VULKAN_SDK=/space/lib/vulkan-sdk-1.3.268.0/x86_64
+ENV VULKAN_SDK_ROOT=/space/lib/vulkan-sdk
+ENV VULKAN_SDK=$VULKAN_SDK_ROOT/x86_64
 ENV PATH=$VULKAN_SDK/bin:$PATH
-ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib:$VULKAN_SDK/lib
+ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib:$VULKAN_SDK/lib/VulkanLoader/lib:$VULKAN_SDK/lib
 ENV VK_LAYER_PATH=$VULKAN_SDK/share/vulkan/explicit_layer.d
 
 RUN mkdir -p /space/output

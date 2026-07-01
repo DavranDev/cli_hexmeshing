@@ -213,7 +213,11 @@ if [[ -n "${HEX_LOCAL:-}" ]]; then
   # below sources it in a fresh `bash -c` that has no `set -u`, so it's only an
   # issue on this in-process path).
   set +u
-  source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh >/dev/null 2>&1 || true
+  if [[ -f /space/lib/vulkan-sdk/setup-env.sh ]]; then
+    source /space/lib/vulkan-sdk/setup-env.sh >/dev/null 2>&1 || true
+  elif [[ -f /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh ]]; then
+    source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh >/dev/null 2>&1 || true
+  fi
   set -u
   # setup-env.sh prefers VK_ADD_LAYER_PATH, but Ubuntu 22.04's older Vulkan
   # loader does not reliably discover the SDK validation layer through it.
@@ -237,7 +241,7 @@ else
     --env="NVIDIA_DRIVER_CAPABILITIES=all" \
     --env="VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json" \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-    -v /usr/share/vulkan:/usr/share/vulkan:ro \
+    -v /usr/share/vulkan/icd.d:/usr/share/vulkan/icd.d:ro \
     -v "$REPO_ROOT/lib:/space/lib" \
     -v "$REPO_ROOT/evocube:/space/evocube" \
     -v "$REPO_ROOT/interactive-hex-meshing:/space/interactive-hex-meshing" \
@@ -246,7 +250,8 @@ else
     -v "$REPO_ROOT/output:/space/output" \
     -v "$REPO_ROOT/cli_run:/space/cli_run" \
     docker-hexmesh \
-    bash -c "source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh \
+    bash -c "if [ -f /space/lib/vulkan-sdk/setup-env.sh ]; then source /space/lib/vulkan-sdk/setup-env.sh; elif [ -f /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh ]; then source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh; else echo 'ERROR: Vulkan SDK not found under /space/lib/vulkan-sdk' >&2; exit 1; fi \
+             && export VK_LAYER_PATH=\${VULKAN_SDK}/share/vulkan/explicit_layer.d \
              && cd /space/interactive-hex-meshing/bin/Release \
              && ./hex --script ${CONTAINER_CONFIG} ${EXIT_AFTER} ${HEADLESS} ${DEVICE_FLAG}" \
     2>&1 | tee "$LOG_FILE"

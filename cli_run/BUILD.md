@@ -20,7 +20,7 @@ There are two paths:
 | Base image | `nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04` |
 | CUDA | 12.4 (host NVIDIA driver must be ≥ this) |
 | LibTorch | 2.6.0+cu124 (`download.pytorch.org`) |
-| Vulkan SDK | 1.3.268.0 (`sdk.lunarg.com`) |
+| Vulkan SDK | Current official LunarG Linux SDK, normalized to `lib/vulkan-sdk` |
 | evocube submodule | `github.com/xmlyqing00/evocube` |
 | CDM submodule | `github.com/DavranDev/interactive-hex-meshing`, branch `cli-runner` |
 
@@ -32,8 +32,12 @@ downloads them. They are gitignored along with `lib/` and the build output.
 ## A. Docker build (recommended)
 
 ### A.1 Host prerequisites
-- Ubuntu (tested on 22.04/24.04), an **NVIDIA GPU + driver** (supporting CUDA ≥ 12.4),
-  `git`, and an X11 display (the tool opens a Vulkan window; see "GUI note" below).
+- Ubuntu (tested on 22.04/24.04), `git`, and Docker.
+- An **NVIDIA GPU + driver** (supporting CUDA >= 12.4) is required for the default
+  CUDA compute path. CPU/headless runs can use `--device cpu` plus a software
+  Vulkan ICD such as Mesa lavapipe.
+- X11 is needed only for the interactive GUI or `--exit-after` mode. True
+  `--headless` mode creates no window and needs no display.
 - Docker + the NVIDIA Container Toolkit. If you don't have them:
   ```bash
   . ./install_docker.sh
@@ -50,15 +54,20 @@ cd cli_hexmeshing
 exact commits this branch pins (the CDM submodule lands on the `cli-runner`
 commit).
 
-### A.3 Download libraries + build the environment image
+### A.3 One-command NVIDIA setup
 ```bash
-. ./setup.sh
+./setup.sh
 ```
-This downloads LibTorch 2.6.0+cu124 and Vulkan SDK 1.3.268.0 into `lib/`, then
-builds the `docker-hexmesh` image (from the repo `Dockerfile`) and creates
-`output/`.
+This downloads LibTorch 2.6.0+cu124 and the current official LunarG Linux Vulkan
+SDK into `lib/`, normalizes the SDK to `lib/vulkan-sdk`, builds the
+`docker-hexmesh` image, compiles evocube + `hex` inside Docker, runs no-crash
+checks, and runs the headless NVIDIA smoke test. For a clean Docker-container
+run, use `./setup.sh --clean-containers`.
 
 ### A.4 Compile the code
+`setup.sh` already does this. Re-run the manual compile only after editing C++
+source:
+
 ```bash
 . ./run_docker.sh          # opens an interactive shell inside docker-hexmesh
 #   --- now inside the container, at /space ---
@@ -74,7 +83,7 @@ generate fresh polycube inputs from raw `.obj` files.
 From the **host** (not the build shell) — `cli_run/run.sh` launches its own
 container per stage:
 ```bash
-./cli_run/run.sh deform interactive-hex-meshing/assets/tutorial/spot.mesh --exit-after
+./cli_run/run.sh deform interactive-hex-meshing/assets/tutorial/spot.mesh --headless
 ```
 See [USAGE_AND_TESTS.md](USAGE_AND_TESTS.md)
 for all four stages and the full chain. To verify the whole pipeline in one
@@ -97,21 +106,12 @@ compiles `hex` + evocube **inside** the image. A reviewer needs only two command
 no host-mounted source, no manual `compile.sh`.
 
 ### A2.1 Prerequisites
-Two library archives must sit at the repo root; the build COPYs them (it does
-**not** re-download):
-- `libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip` — LibTorch (from `setup.sh`).
-- `vulkan-sdk-1.3.268.0.tar.xz` — the **proven** Vulkan SDK 1.3.268.0, repackaged
-  once from the working `lib/vulkan-sdk-1.3.268.0` tree:
-  ```bash
-  tar -C lib -cf - vulkan-sdk-1.3.268.0 | xz -T0 -3 -c > vulkan-sdk-1.3.268.0.tar.xz
-  ```
-  > ⚠️ The repo also carries a `vulkansdk.tar.xz`, but that is a **different,
-  > untested version (1.4.341.1)** — the build deliberately ignores it.
-  > `compile.sh` and `run.sh` are pinned to **1.3.268.0**, and LunarG's direct
-  > download link for that older SDK now 404s, so we ship it from the local proven
-  > tree instead of re-downloading.
-
-Docker is required. **No GPU is needed to build** (`nvcc` compiles without a device).
+Docker is required. **No GPU is needed to build** (`nvcc` compiles without a
+device). `Dockerfile.build` downloads LibTorch 2.6.0+cu124 and the current
+official LunarG Linux Vulkan SDK itself, then normalizes the SDK to
+`/space/lib/vulkan-sdk`. No local Vulkan tarball is required in the build
+context. Override `LIBTORCH_URL` or `VULKAN_SDK_URL` with Docker build args only
+when intentionally pinning a different artifact.
 
 ### A2.2 Build
 ```bash
@@ -126,32 +126,29 @@ docker build -f Dockerfile.build -t hexmesh-cli:week2 .
   built from the CUDA *devel* base + LibTorch + Vulkan SDK; see A2.6 for slimming.
 
 ### A2.3 Run the smoke test (GPU needed only here, at run time)
-On a host with an NVIDIA driver + GPU. Allow the container to reach your X server,
-then run:
+On a host with an NVIDIA driver + GPU, run the default headless smoke:
 ```bash
-xhost +local:root                                  # let the container use $DISPLAY
 docker run --runtime=nvidia --gpus all --rm \
-  -e DISPLAY=$DISPLAY -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
-  -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+  -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
   -v "$(pwd)/output:/space/output" \
   hexmesh-cli:week2 ./cli_run/smoke_test.sh         # PASS = valid hex mesh, 0 inverted
 ```
 `NVIDIA_DRIVER_CAPABILITIES=all` makes the NVIDIA Container Toolkit inject the
-Vulkan ICD + GL libs into the container — **do not** also bind-mount the host
-`/usr/share/vulkan` (it drags in host-only implicit layers the container lacks and
-the run aborts). `HEX_LOCAL=1` tells `cli_run/run.sh` to run `hex` **directly**
+Vulkan ICD + GL libs into the container. For self-contained images, **do not**
+also bind-mount the host `/usr/share/vulkan` (it drags in host-only implicit
+layers the container lacks and the run aborts). `HEX_LOCAL=1` tells
+`cli_run/run.sh` to run `hex` **directly**
 inside the container instead of launching another docker container (its default
 host-side behavior — see A.5 — is unchanged). The image is laid out at `/space`
 exactly like the A.5 mounts, so the paths the runner writes into its YAML resolve
 correctly. Drop `./cli_run/smoke_test.sh` for an interactive shell.
 
-**No display? Run headless on a virtual one** (no `DISPLAY`, no X mount):
+**No display?** Use true headless mode, which is now the smoke-test default:
 ```bash
 docker run --runtime=nvidia --gpus all --rm \
   -e NVIDIA_DRIVER_CAPABILITIES=all -e HEX_LOCAL=1 \
   -v "$(pwd)/output:/space/output" hexmesh-cli:week2 \
-  bash -lc 'apt-get update -qq && apt-get install -y -qq xvfb && \
-            xvfb-run -a -s "-screen 0 1280x720x24" ./cli_run/smoke_test.sh'
+  ./cli_run/smoke_test.sh
 ```
 
 > **Verified 2026-06-17 (RTX 4090, driver 580.159.03, CUDA 12.4 image):** both the
@@ -171,14 +168,13 @@ docker run --runtime=nvidia --gpus all --rm \
 | | |
 |---|---|
 | **Baked into the image** | compiled `hex` + evocube binaries, LibTorch + Vulkan SDK runtime libs, the CLI wrapper (`cli_run/`), and the tutorial meshes (`interactive-hex-meshing/assets/`) used by the smoke test |
-| **Supplied at run time only** | a writable `output/` mount (to get results onto the host), any **custom input mesh** you want to process, and — for the real pipeline — the **NVIDIA GPU + driver, Vulkan ICD, and an X11 `DISPLAY`** |
+| **Supplied at run time only** | a writable `output/` mount (to get results onto the host), any **custom input mesh** you want to process, and — for CUDA mode — the **NVIDIA GPU + driver and Vulkan ICD**. X11 `DISPLAY` is required only for GUI/`--exit-after`. |
 
 ### A2.5 GPU is build-free, run-bound
 `docker build` needs no GPU and no display (`nvcc` cross-compiles). A working
-**NVIDIA driver (CUDA ≥ 12.4), the Vulkan ICD, and an X11 display are required
-only at `docker run` time** — the tool still opens a Vulkan window today (see the
-GUI note at the bottom). A true headless mode is tracked separately
-(`cli_run/HEADLESS.md`, in progress).
+**NVIDIA driver (CUDA >= 12.4) and a Vulkan ICD are runtime requirements for the
+default CUDA path.** A display is required only for GUI/`--exit-after`; the shipped
+`--headless` path creates no window/surface/swapchain and needs no X11 display.
 
 ### A2.6 Two-stage runtime slimming (SHIPPED — validated 2026-06-18)
 `Dockerfile.build` is now multi-stage with two selectable targets:
@@ -250,14 +246,15 @@ You do **not** need a separate cuDNN package — LibTorch 2.6.0+cu124 ships its 
 `libcudnn.so.9` under `lib/libtorch/lib`.
 
 ### B.2 Libraries
-Use the same downloads as `setup.sh` (LibTorch 2.6.0+cu124, Vulkan SDK 1.3.268.0)
-unpacked into `lib/libtorch` and `lib/vulkan-sdk-1.3.268.0`.
+Use the same downloads as `setup.sh`: LibTorch 2.6.0+cu124 under `lib/libtorch`
+and the current official LunarG Linux Vulkan SDK under `lib/vulkan-sdk`.
 
 ### B.3 Build
 ```bash
 export PATH=/usr/local/cuda/bin:$PATH
 export Torch_DIR=$PWD/lib/libtorch/share/cmake/Torch/
-source lib/vulkan-sdk-1.3.268.0/setup-env.sh
+source lib/vulkan-sdk/setup-env.sh
+export VK_LAYER_PATH=$VULKAN_SDK/share/vulkan/explicit_layer.d
 
 # evocube (CPU only — OpenMP; no CUDA / LibTorch)
 cmake -S evocube -B evocube/build && cmake --build evocube/build -j8
@@ -268,8 +265,8 @@ cmake -S interactive-hex-meshing -B interactive-hex-meshing/build/Release \
 cmake --build interactive-hex-meshing/build/Release -j8
 ```
 Binary: `interactive-hex-meshing/bin/Release/hex`. To run it you also need
-`export LD_LIBRARY_PATH=$PWD/lib/libtorch/lib:$VULKAN_SDK/lib` (plus an NVIDIA
-driver + X11 display — see the GUI note).
+`export LD_LIBRARY_PATH=$PWD/lib/libtorch/lib:$VULKAN_SDK/lib/VulkanLoader/lib:$VULKAN_SDK/lib`
+(plus an NVIDIA driver + X11 display for GUI mode — see the GUI note).
 
 ### B.4 Verification status + known gaps
 **Compile-verified on a clean `ubuntu:22.04` container on 2026-06-16** (24-core
@@ -306,7 +303,7 @@ A prebuilt `hex` (Week-3 build, **with `--headless`**) is delivered two ways:
 
 The bare binary runs **only** in a matching environment:
 - the `docker-hexmesh` image (or a host with the same libraries),
-- NVIDIA driver supporting CUDA 12.4, LibTorch 2.6.0+cu124, Vulkan SDK 1.3.268.0,
+- NVIDIA driver supporting CUDA 12.4, LibTorch 2.6.0+cu124, the LunarG Vulkan SDK,
 - a Vulkan ICD. **No X11 display is required** with `--headless` (the surfaceless
   path skips the window); only the legacy GUI / `--exit-after` path opens a Vulkan
   window and needs `DISPLAY` (or `xvfb`).
@@ -324,9 +321,10 @@ build — **18 526 hexes, 0 inverted**.
 Three ways to run, in increasing display-independence:
 - **GUI** (default): launches the Vulkan window; interactive.
 - **`--exit-after`**: opens the window, runs the script, closes it — still needs a
-  display (real X11 or `xvfb`). Used by `smoke_test.sh` by default.
+  display (real X11 or `xvfb`).
 - **`--headless`** (Week-3, shipped): creates **no window/surface/swapchain at
-  all** — needs a Vulkan ICD + GPU but **no display**. Use `--headless` (or
-  `SMOKE_HEADLESS=1 ./cli_run/smoke_test.sh`). Design + verification in
+  all** — needs a Vulkan ICD but **no display**. CUDA compute still needs an
+  NVIDIA GPU; `--device cpu` can run against a software Vulkan ICD. Use
+  `--headless` (or just run `./cli_run/smoke_test.sh`, which defaults to headless). Design + verification in
   [HEADLESS.md](HEADLESS.md); the per-stage GPU/CPU split is in
   [DEPENDENCY_MAP.md](DEPENDENCY_MAP.md) and [CPU_ONLY.md](CPU_ONLY.md).

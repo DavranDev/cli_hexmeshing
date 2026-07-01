@@ -6,12 +6,12 @@ builds the project images, and provides initial CPU/GPU checks.
 
 Repository: <https://github.com/DavranDev/cli_hexmeshing/tree/cli-runner>
 
-Validated checkout on 2026-06-21:
+Public branch baseline checked during this reliability pass:
 
 ```text
-cli_hexmeshing             88920b66b248801b5448d61f7afa6904c2d9933f
+cli_hexmeshing             9404468e285918a6087f8a809d919627ef813a47
 evocube                    c1a7930a147716ef25ee37e5de69f74c605c623a
-interactive-hex-meshing    c58977ec40e1dfe70c00a9a1f4a406e5e3e04ed5
+interactive-hex-meshing    0a42075ff6d5bfd273bbdef5f4442c19ed042eb0
 ```
 
 ## CLI documentation is the source of truth
@@ -28,6 +28,9 @@ The important implementation and presentation material is under `cli_run/`:
 | `cli_run/SOURCE_CHANGES.md` | Exact changes made to the CDM submodule |
 | `cli_run/run.sh` | Current accepted arguments and actual container behavior |
 | `cli_run/smoke_test.sh` | Current four-stage pass/fail gate |
+| `patches/evocube-polycube_final-segfault.patch` | Local Evocube guard for the missing `polycube_final.obj` post-processing crash |
+| `patches/interactive-hex-meshing-validation-layer-fallback.patch` | Local `hex` guard for missing Vulkan validation layers |
+| `scripts/verify_no_crash_fixes.sh` | Fast source/binary regression checks for the crash fixes |
 
 Some paragraphs in `cli_run/README.md`, `REPORT.md`, `REPORT_LATEST.md`, and
 `how_to_run.txt` preserve earlier Week-1/Week-2 status and are now stale. In
@@ -44,6 +47,10 @@ Current CLI facts:
   a Vulkan ICD. The slim image supplies Mesa lavapipe for this.
 - Compute defaults to `--device cuda`; pass `--device cpu` for CPU compute.
 - The hard pass gate is `total_hexes > 0` and `inverted_count == 0`.
+- The public Evocube submodule does not contain the `polycube_final.obj`
+  post-processing fix. `compile.sh` applies the parent-repo patch automatically
+  before building Evocube, so fresh clones stay reproducible without pinning an
+  unpublished submodule commit.
 
 ## 1. Ubuntu host requirements
 
@@ -174,70 +181,23 @@ git submodule sync --recursive
 git submodule update --init --recursive
 ```
 
-## 4. Required external archives
+## 4. External dependency downloads
 
-`Dockerfile.build` requires these files at the repository root:
+No Vulkan tarball is required in git or at the repository root. The active setup
+paths download dependencies directly:
 
-```text
-libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
-vulkan-sdk-1.3.268.0.tar.xz
-```
+- `setup.sh` downloads LibTorch 2.6.0+cu124 and the current official LunarG
+  Linux Vulkan SDK, then installs them under `lib/libtorch` and `lib/vulkan-sdk`.
+- `Dockerfile.build` downloads the same artifacts inside its `libs` stage and
+  normalizes the Vulkan SDK to `/space/lib/vulkan-sdk`.
 
-Download LibTorch:
+The old LunarG `1.3.268.0` URL used by the original scripts now returns HTTP
+404. Do not ask users to find that archive manually. Override `LIBTORCH_URL` or
+`VULKAN_SDK_URL` only when intentionally pinning a tested artifact.
 
-```bash
-cd ~/src/AutoHexMesh
-
-curl -L --fail --retry 5 \
-  'https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip' \
-  -o libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
-
-sha256sum libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
-```
-
-Validated LibTorch checksum:
-
-```text
-be21b2ad0d7848fed3f909711889a549864b6cf06d564c58454eeb32a76eaaae
-```
-
-### Vulkan SDK compatibility archive
-
-LunarG no longer publishes the old 1.3.268 download used by the original
-scripts. On 2026-06-21, its old URLs returned HTTP 404. The clean build was
-validated with the current official LunarG Linux SDK, version 1.4.350.1, while
-retaining the historical directory name expected by `compile.sh` and `run.sh`.
-
-Run these commands on a fresh checkout:
-
-```bash
-cd ~/src/AutoHexMesh
-
-curl -L --fail --retry 5 \
-  'https://sdk.lunarg.com/sdk/download/latest/linux/vulkan-sdk.tar.xz' \
-  -o vulkansdk-current.tar.xz
-
-mkdir -p lib
-tar -xf vulkansdk-current.tar.xz -C lib
-mv lib/1.4.350.1 lib/vulkan-sdk-1.3.268.0
-
-tar -C lib -cf - vulkan-sdk-1.3.268.0 \
-  | xz -T0 -3 -c > vulkan-sdk-1.3.268.0.tar.xz
-
-sha256sum vulkansdk-current.tar.xz vulkan-sdk-1.3.268.0.tar.xz
-```
-
-Validated checksums for the 2026-06-21 inputs:
-
-```text
-6cce33c7e5383814150c5041820769d93c65a1fd883002e5949b067045a07daa  vulkansdk-current.tar.xz
-c8958b798622566682679d52e3243ef82a9f77d1998bcf5ff2ee057732e3548c  vulkan-sdk-1.3.268.0.tar.xz
-```
-
-The `latest` URL can change. For a reproducible presentation, publish or retain
-these exact validated archives instead of silently accepting a newer SDK. If a
-new SDK is intentionally adopted, replace `1.4.350.1` in the `mv` command and
-rerun all tests in section 7.
+The `latest` Vulkan URL can change. For a reproducible presentation, pin
+`VULKAN_SDK_URL` to a known artifact URL or publish a release asset. Rerun all
+tests in section 7 whenever adopting a new SDK.
 
 ## 5. Build the self-contained Docker images
 
@@ -253,12 +213,10 @@ Docker may create temporary containers and intermediate stages while building;
 BuildKit discards those. Section 6's `docker-hexmesh:latest` is a separate,
 optional legacy environment image and is not one of these two deliverables.
 
-Confirm both archives exist:
+Confirm the source checkout exists and create the output directory:
 
 ```bash
 cd ~/src/AutoHexMesh
-test -f libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
-test -f vulkan-sdk-1.3.268.0.tar.xz
 mkdir -p output
 ```
 
@@ -322,21 +280,16 @@ environment-variable workaround.
 This is the older development workflow. Source and libraries remain on the host
 and are bind-mounted into the container.
 
-Extract the libraries:
+Install the libraries and build the environment image:
 
 ```bash
 cd ~/src/AutoHexMesh
-mkdir -p lib
-unzip -q libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip -d lib
-tar -xf vulkan-sdk-1.3.268.0.tar.xz -C lib
+. ./setup.sh
 ```
 
-Build the environment image:
-
-```bash
-docker build --no-cache --progress=plain \
-  -t docker-hexmesh:latest .
-```
+`setup.sh` also builds `docker-hexmesh`; rerun `docker build -t docker-hexmesh .`
+only when intentionally rebuilding the environment image without reinstalling the
+libraries.
 
 Compile the bind-mounted source non-interactively:
 
@@ -346,6 +299,7 @@ docker run --rm \
   -v "$PWD/evocube:/space/evocube" \
   -v "$PWD/interactive-hex-meshing:/space/interactive-hex-meshing" \
   -v "$PWD/compile.sh:/space/compile.sh:ro" \
+  -v "$PWD/patches:/space/patches:ro" \
   docker-hexmesh:latest \
   bash /space/compile.sh
 ```
@@ -406,41 +360,16 @@ scaled-Jacobian minimum 0.0245009158, wall time 10.24 seconds.
 
 ### 7.3 CPU-only + headless full pipeline
 
-`smoke_test.sh` currently chooses GUI versus headless but does not forward a
-compute-device option. Therefore, run the four stages explicitly for the CPU
-gate. No GPU is passed to this container:
+`smoke_test.sh` can validate the CPU path by forwarding `SMOKE_DEVICE=cpu`.
+No GPU is passed to this container:
 
 ```bash
 docker run --rm \
   -e HEX_LOCAL=1 \
+  -e SMOKE_DEVICE=cpu \
   -v "$PWD/output:/space/output" \
-  hexmesh-cli:slim bash -lc '
-set -e
-RUN=./cli_run/run.sh
-M=interactive-hex-meshing/assets/tutorial/spot.mesh
-
-$RUN deform "$M" --headless --device cpu
-S0=$(ls -dt output/runs/spot/deformation_* | head -1)
-
-$RUN decompose "$S0/stage_0_deformation.hdf5" --headless --device cpu
-S1=$(ls -dt output/runs/spot/decomposition_* | head -1)
-
-$RUN discretize "$S1/stage_1_decomposition.hdf5" --headless --device cpu
-S2=$(ls -dt output/runs/spot/discretization_* | head -1)
-
-$RUN hexahedralize "$S2/stage_2_discretization.hdf5" --headless --device cpu
-S3=$(ls -dt output/runs/spot/hexahedralization_* | head -1)
-
-METRICS="$S3/result_metrics.yaml"
-test -f "$S3/result.mesh"
-test -f "$METRICS"
-HEXES=$(awk "/^total_hexes:/{print \$2}" "$METRICS")
-INVERTED=$(awk "/^inverted_count:/{print \$2}" "$METRICS")
-test "$HEXES" -gt 0
-test "$INVERTED" -eq 0
-cat "$METRICS"
-echo "PASS: CPU headless — $HEXES hexes, 0 inverted"
-'
+  hexmesh-cli:slim \
+  ./cli_run/smoke_test.sh
 ```
 
 Validated result on 2026-06-21 with no `--gpus` option: **PASS**, 18,526 hexes,
@@ -607,7 +536,7 @@ nvcc --version
 cd ~/src/AutoHexMesh
 export Torch_DIR="$PWD/lib/libtorch/share/cmake/Torch"
 set +u
-source "$PWD/lib/vulkan-sdk-1.3.268.0/setup-env.sh"
+source "$PWD/lib/vulkan-sdk/setup-env.sh"
 set -u
 export VK_LAYER_PATH="$VULKAN_SDK/share/vulkan/explicit_layer.d"
 

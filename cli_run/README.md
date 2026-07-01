@@ -1,6 +1,9 @@
 # CLI Automation for interactive-hex-meshing
 
-Run the hex-meshing pipeline from the command line. This is **scripted GUI automation**, not a fully headless CLI: the existing `hex` binary still launches the Vulkan window, but it now reads a YAML script on startup and runs the requested stage automatically. The window stays open for inspection unless `--exit-after` is passed.
+Run the hex-meshing pipeline from the command line. The same `hex` binary can
+run either the interactive Vulkan GUI, an auto-closing scripted GUI
+(`--exit-after`), or true scripted headless mode (`--headless`, no X11 window,
+surface, swapchain, render pipelines, or GUI).
 
 For the underlying pipeline, see [../PIPELINE_NOTES.md](../PIPELINE_NOTES.md).
 
@@ -25,7 +28,8 @@ There is no single `full` subcommand: run the stages in sequence, feeding each `
 
 ## Prerequisites
 
-1. A working Docker + NVIDIA + X11 + Vulkan setup. The same one the GUI already needs — `./run_docker.sh` must work first.
+1. A working Docker + Vulkan setup. X11 is needed only for GUI/`--exit-after`
+   runs; `--headless` needs a Vulkan ICD but no display.
 2. The `hex` binary must be **rebuilt** after pulling these CLI changes. Inside the container:
    ```bash
    . /space/compile.sh
@@ -36,10 +40,10 @@ There is no single `full` subcommand: run the stages in sequence, feeding each `
 ## Usage
 
 ```bash
-./cli_run/run.sh deform         <input.mesh|input.hdf5>  [config.yaml]  [--exit-after]
-./cli_run/run.sh decompose      <input.hdf5>             [config.yaml]  [--exit-after]
-./cli_run/run.sh discretize     <input.hdf5>             [config.yaml]  [--exit-after]
-./cli_run/run.sh hexahedralize  <input.hdf5>             [config.yaml]  [--exit-after]
+./cli_run/run.sh deform         <input.mesh|input.hdf5>  [config.yaml]  [--headless|--exit-after] [--device cpu|cuda]
+./cli_run/run.sh decompose      <input.hdf5>             [config.yaml]  [--headless|--exit-after] [--device cpu|cuda]
+./cli_run/run.sh discretize     <input.hdf5>             [config.yaml]  [--headless|--exit-after] [--device cpu|cuda]
+./cli_run/run.sh hexahedralize  <input.hdf5>             [config.yaml]  [--headless|--exit-after] [--device cpu|cuda]
 ```
 
 `deform` is the only subcommand that accepts a raw `.mesh`/`.vtk` tet mesh (detected by extension); Stages 1–3 require an HDF5 carrying the field listed in the table above.
@@ -51,10 +55,10 @@ If `[config.yaml]` is omitted, the default at `cli_run/configs/stage_<subcommand
 ```bash
 M=interactive-hex-meshing/assets/tutorial/spot.mesh
 
-./cli_run/run.sh deform        "$M" --exit-after
-./cli_run/run.sh decompose     output/runs/spot/deformation_*/stage_0_deformation.hdf5   --exit-after
-./cli_run/run.sh discretize    output/runs/spot/decomposition_*/stage_1_decomposition.hdf5 --exit-after
-./cli_run/run.sh hexahedralize output/runs/spot/discretization_*/stage_2_discretization.hdf5 --exit-after
+./cli_run/run.sh deform        "$M" --headless
+./cli_run/run.sh decompose     output/runs/spot/deformation_*/stage_0_deformation.hdf5    --headless
+./cli_run/run.sh discretize    output/runs/spot/decomposition_*/stage_1_decomposition.hdf5 --headless
+./cli_run/run.sh hexahedralize output/runs/spot/discretization_*/stage_2_discretization.hdf5 --headless
 ```
 
 Other ready-to-use Stage-0 tet meshes ship alongside it in
@@ -143,7 +147,13 @@ All parameter names mirror the GUI labels documented in [PIPELINE_NOTES.md](../P
 
 ## Caveats
 
-- **Display required.** This launches the Vulkan + X11 GUI inside Docker. On a server without a display, the binary will fail before any stage runs. There is no headless mode yet.
+- **Display modes.** `--headless` creates no X11 window and is the recommended
+  batch mode. `--exit-after` still opens a real Vulkan window before closing it,
+  so it requires `DISPLAY` and X11 forwarding.
+- **Vulkan still required.** Headless mode removes the window/surface/swapchain,
+  but the application still creates a surfaceless Vulkan device. CPU compute can
+  use `--device cpu`, but a Vulkan ICD is still required for the view device
+  unless the deeper no-Vulkan refactor is implemented later.
 - **Preconditions.** Each subcommand checks its required input field and throws a clear `std::runtime_error` (exit 1, no partial output) if it's missing — e.g. calling `hexahedralize` on an HDF5 without a `polycube_complex`.
 - **Logs.** Both Docker startup output and the `hex` binary's own logs are captured in `log.txt` via `tee`. Look there first when debugging.
 - **Run-dir persistence.** Run directories are not auto-cleaned. They live under `output/runs/` until you remove them.
@@ -154,9 +164,11 @@ All parameter names mirror the GUI labels documented in [PIPELINE_NOTES.md](../P
 
 | Symptom | Likely cause |
 |---|---|
-| `Cannot open display` / `Vulkan ICD error` | X11 not forwarded, or wrong ICD. The wrapper already sets `VK_ICD_FILENAMES` to NVIDIA-only and runs `xhost +local:root` — confirm `./run_docker.sh` works first. |
+| `Cannot open display` | You used GUI/`--exit-after` without X11. Use `--headless` for batch runs. |
+| `Vulkan ICD error` | The Vulkan loader cannot find a usable ICD. For NVIDIA GUI runs, use the full/devel image and the NVIDIA Container Toolkit. For CPU/headless runs, use an image with Mesa lavapipe or another valid ICD. |
 | `[script] decomposition requires a deformed volume mesh` | Input HDF5 has no `deformed_volume_mesh`. Run `deform` first and feed its `stage_0` output. |
 | `[script] discretization requires a polycube` | Input HDF5 has no `/polycube`. Run `decompose` first. |
 | `[script] hexahedralization requires polycube_complex + ...` | Input HDF5 is missing one of `polycube_complex`, `deformed_volume_mesh`, `target_volume_mesh`. Use a Stage-2 (or later) HDF5. |
 | Build failure after pulling these CLI changes | You must rebuild the `hex` binary inside the container: `. /space/compile.sh`. |
 | Window does not appear | `keep_window_open: false` in your YAML, or `--exit-after` was passed. |
+| Evocube reports missing `polycube_final.obj` | Expected for `init_from_folder`; the compile-time patch skips that post-processing measurement. Continue with `build_hdf5.py` if `tetra.mesh` and `fast_polycube_surf.obj` exist. |

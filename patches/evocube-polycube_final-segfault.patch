@@ -1,0 +1,78 @@
+diff --git a/app/figure_generator.cpp b/app/figure_generator.cpp
+index 9b48650..7c07970 100644
+--- a/app/figure_generator.cpp
++++ b/app/figure_generator.cpp
+@@ -198,0 +199,10 @@ int main(int argc, char *argv[]) {
++    // Bail out cleanly instead of segfaulting if the mesh failed to load (e.g.
++    // polycube_final.obj is not produced by the init_from_folder pipeline). The
++    // code below indexes V/F (adjacency, normals, V.col(0)) and would crash on
++    // an empty mesh. Returning non-zero also stops the chained `&&` figure calls.
++    if (V.rows() == 0 || F.rows() == 0) {
++        coloredPrint("ERROR: figure_generator could not read mesh " + mesh_file
++                     + " (skipping figure).", "red");
++        return 1;
++    }
++
+diff --git a/app/init_from_folder.cpp b/app/init_from_folder.cpp
+index b349ee9..74c19c7 100644
+--- a/app/init_from_folder.cpp
++++ b/app/init_from_folder.cpp
+@@ -287,0 +288,5 @@ int main(){
++        // The simple HexEx method (polycube_withHexEx) does not emit
++        // polycube_final.obj in this pipeline; only the dataset-synthesis tool
++        // (synthesize_data) writes it. Calling measurement on the missing file
++        // used to crash (readOBJ IOError -> empty mesh -> segfault), so only
++        // measure it when it actually exists.
+@@ -289,3 +294,10 @@ int main(){
+-        std::string command_measurement_3 = "./measurement " + boundary_obj_path + " " + new_folder + "/polycube_final.obj";
+-        int result_measurement_3 = system(command_measurement_3.c_str());
+-        if (result_measurement_3 == 2) return 2;
++        std::string polycube_final_path = new_folder + "/polycube_final.obj";
++        if (std::filesystem::exists(polycube_final_path)){
++            std::string command_measurement_3 = "./measurement " + boundary_obj_path + " " + polycube_final_path;
++            int result_measurement_3 = system(command_measurement_3.c_str());
++            if (result_measurement_3 == 2) return 2;
++        }
++        else {
++            coloredPrint("Skipping final-polycube measurement: " + polycube_final_path
++                         + " not produced by this pipeline.", "yellow");
++        }
+diff --git a/app/measurement.cpp b/app/measurement.cpp
+index 94760b4..595bd6a 100644
+--- a/app/measurement.cpp
++++ b/app/measurement.cpp
+@@ -60,11 +60,21 @@ int main(int argc, char *argv[]){
+-    
+-    //*
+-    // Checking input validity
+-    if (V1.rows() != V2.rows()) coloredPrint("ERROR: vertex sizes don't match", "red");
+-    if (F.rows() != F2.rows()) coloredPrint("ERROR: face sizes don't match", "red");
+-    else {
+-        for (int i=0; i<F.rows(); i+= F.rows()/15){
+-            if (F(i,1) != F2(i,1)){
+-                coloredPrint("ERROR: Face mismatch", "red");
+-                break;
+-            }
++
++    // Checking input validity. Bail out cleanly instead of segfaulting if a mesh
++    // failed to load or the two meshes are not the same combinatorial surface.
++    // igl::readOBJ leaves the matrices empty when a file is missing (e.g. a
++    // polycube the pipeline never produced); the area/Jacobian math below indexes
++    // F into V2 and would crash on mismatched sizes.
++    if (V1.rows() == 0 || F.rows() == 0 || V2.rows() == 0 || F2.rows() == 0) {
++        coloredPrint("ERROR: measurement could not read one of the meshes ("
++                     + input_filepath + " / " + polycube_filepath + "); skipping.", "red");
++        return 1;
++    }
++    if (V1.rows() != V2.rows() || F.rows() != F2.rows()) {
++        if (V1.rows() != V2.rows()) coloredPrint("ERROR: vertex sizes don't match", "red");
++        if (F.rows() != F2.rows()) coloredPrint("ERROR: face sizes don't match", "red");
++        coloredPrint("Skipping measurement: the two meshes are not the same surface.", "red");
++        return 1;
++    }
++    for (int i=0; i<F.rows(); i+= F.rows()/15){
++        if (F(i,1) != F2(i,1)){
++            coloredPrint("ERROR: Face mismatch", "red");
++            break;
+@@ -73 +82,0 @@ int main(int argc, char *argv[]){
+-    //*/

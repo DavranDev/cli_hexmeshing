@@ -1,0 +1,22 @@
+diff --git a/vkoo/include/vkoo/core/Instance.h b/vkoo/include/vkoo/core/Instance.h
+index 8a189ad..e211bdb 100644
+--- a/vkoo/include/vkoo/core/Instance.h
++++ b/vkoo/include/vkoo/core/Instance.h
+@@ -30 +30 @@ class Instance {
+-  VkDebugUtilsMessengerEXT debug_messenger_;
++  VkDebugUtilsMessengerEXT debug_messenger_{VK_NULL_HANDLE};
+@@ -33 +33 @@ class Instance {
+-}  // namespace vkoo
+\ No newline at end of file
++}  // namespace vkoo
+diff --git a/vkoo/src/core/Instance.cpp b/vkoo/src/core/Instance.cpp
+index 0658867..3a4e2e8 100644
+--- a/vkoo/src/core/Instance.cpp
++++ b/vkoo/src/core/Instance.cpp
+@@ -31 +31,5 @@ Instance::Instance(const std::string& application_name,
+-    throw std::runtime_error("Validation layers requested but not available!");
++    std::cerr << "Warning: Vulkan validation layer " << kValidationLayerName
++              << " was requested but is not available. Continuing without "
++                 "validation layers."
++              << std::endl;
++    enable_validation_layer_ = false;

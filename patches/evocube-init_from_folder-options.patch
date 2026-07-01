@@ -1,0 +1,211 @@
+diff --git a/app/init_from_folder.cpp b/app/init_from_folder.cpp
+index 74c19c7..3cb7063 100644
+--- a/app/init_from_folder.cpp
++++ b/app/init_from_folder.cpp
+@@ -8,0 +9 @@
++#include <vector>
+@@ -17,2 +18,20 @@
+-int main(){
+-    enum INPUT_TYPE {TRI_OBJ, TRI_STL, CAD_STEP, TET_MESH};
++namespace {
++enum INPUT_TYPE {TRI_OBJ, TRI_STL, CAD_STEP, TET_MESH};
++
++void print_usage(const char* exe){
++    std::cout << "Usage: " << exe
++              << " [--input-dir PATH] [--output-dir PATH]"
++              << " [--input-type obj|stl|step|mesh] [--no-figures]"
++              << " [--break-after-first]\n"
++              << "\n"
++              << "Defaults:\n"
++              << "  --input-dir  /space/data/examples\n"
++              << "  --output-dir /space/output/examples/\n"
++              << "  --input-type obj\n"
++              << "\n"
++              << "Positional compatibility is also accepted:\n"
++              << "  " << exe << " [input_dir] [output_dir] [obj|stl|step|mesh]\n";
++}
++}
++
++int main(int argc, char *argv[]){
+@@ -40,0 +60 @@ int main(){
++    bool generate_figures = true;
+@@ -98,3 +118,78 @@ int main(){
+-    if (!std::filesystem::exists(output_path)) {
+-        if (std::filesystem::create_directories(output_path)) {
+-            std::cout << "Folder Created: " << output_path << std::endl;
++
++    auto set_input_type = [&](const std::string& value) -> bool {
++        if (value == "obj" || value == "OBJ"){
++            input_type = TRI_OBJ;
++            expected_extension = "obj";
++            return true;
++        }
++        if (value == "stl" || value == "STL"){
++            input_type = TRI_STL;
++            expected_extension = "stl";
++            return true;
++        }
++        if (value == "step" || value == "STEP"){
++            input_type = CAD_STEP;
++            expected_extension = "step";
++            return true;
++        }
++        if (value == "mesh" || value == "MESH"){
++            input_type = TET_MESH;
++            expected_extension = "mesh";
++            return true;
++        }
++        return false;
++    };
++
++    int positional = 0;
++    for (int i = 1; i < argc; ++i){
++        std::string arg = argv[i];
++        if (arg == "-h" || arg == "--help"){
++            print_usage(argv[0]);
++            return 0;
++        }
++        if (arg == "--input-dir"){
++            if (++i >= argc){
++                coloredPrint("ERROR: --input-dir needs a path", "red");
++                return 1;
++            }
++            input_path = argv[i];
++            continue;
++        }
++        if (arg == "--output-dir"){
++            if (++i >= argc){
++                coloredPrint("ERROR: --output-dir needs a path", "red");
++                return 1;
++            }
++            output_path = argv[i];
++            continue;
++        }
++        if (arg == "--input-type"){
++            if (++i >= argc){
++                coloredPrint("ERROR: --input-type needs obj|stl|step|mesh", "red");
++                return 1;
++            }
++            if (!set_input_type(argv[i])){
++                coloredPrint("ERROR: unsupported input type " + std::string(argv[i]), "red");
++                return 1;
++            }
++            continue;
++        }
++        if (arg == "--no-figures"){
++            generate_figures = false;
++            continue;
++        }
++        if (arg == "--break-after-first"){
++            break_after_first = true;
++            continue;
++        }
++        if (!arg.empty() && arg[0] == '-'){
++            coloredPrint("ERROR: unknown argument " + arg, "red");
++            print_usage(argv[0]);
++            return 1;
++        }
++
++        if (positional == 0){
++            input_path = arg;
++        }
++        else if (positional == 1){
++            output_path = arg;
+@@ -101,0 +197,32 @@ int main(){
++        else if (positional == 2){
++            if (!set_input_type(arg)){
++                coloredPrint("ERROR: unsupported input type " + arg, "red");
++                return 1;
++            }
++        }
++        else {
++            coloredPrint("ERROR: too many positional arguments", "red");
++            print_usage(argv[0]);
++            return 1;
++        }
++        positional++;
++    }
++
++    if (!output_path.empty() && output_path.back() != '/'){
++        output_path += "/";
++    }
++
++    if (!std::filesystem::exists(input_path) || !std::filesystem::is_directory(input_path)){
++        coloredPrint("ERROR: input directory does not exist: " + input_path, "red");
++        return 1;
++    }
++
++    std::error_code fs_error;
++    if (!std::filesystem::exists(output_path) &&
++        std::filesystem::create_directories(output_path, fs_error)) {
++        std::cout << "Folder Created: " << output_path << std::endl;
++    }
++    if (fs_error){
++        coloredPrint("ERROR: could not create output directory " + output_path
++                     + ": " + fs_error.message(), "red");
++        return 1;
+@@ -126,0 +254 @@ int main(){
++    int processed_entries = 0;
+@@ -137,0 +266 @@ int main(){
++        processed_entries++;
+@@ -265 +394,4 @@ int main(){
+-            if (result_labeling == 2) return 2;
++            if (result_labeling != 0) {
++                coloredPrint("ERROR: labeling failed on " + new_folder, "red");
++                continue;
++            }
+@@ -273 +405,4 @@ int main(){
+-            if (result_hexex == 2) return 2;
++            if (result_hexex != 0) {
++                coloredPrint("ERROR: polycube_withHexEx failed on " + new_folder, "red");
++                continue;
++            }
+@@ -281 +416,3 @@ int main(){
+-        if (result_measurement_1 == 2) return 2;
++        if (result_measurement_1 != 0) {
++            coloredPrint("WARNING: fast float polycube measurement failed on " + new_folder, "yellow");
++        }
+@@ -286 +423,3 @@ int main(){
+-        if (result_measurement_2 == 2) return 2;
++        if (result_measurement_2 != 0) {
++            coloredPrint("WARNING: fast int polycube measurement failed on " + new_folder, "yellow");
++        }
+@@ -298 +437,3 @@ int main(){
+-            if (result_measurement_3 == 2) return 2;
++            if (result_measurement_3 != 0) {
++                coloredPrint("WARNING: final polycube measurement failed on " + new_folder, "yellow");
++            }
+@@ -306,4 +447,23 @@ int main(){
+-        std::string command_figure = "./figure_generator " + file_without_extension + " 0 " + output_path;
+-        command_figure += " && ./figure_generator " + file_without_extension + " 1 " + output_path;
+-        command_figure += " && ./figure_generator " + file_without_extension + " 4 " + output_path;
+-        int result_figures = system(command_figure.c_str());
++        if (generate_figures) {
++            std::vector<std::string> figure_commands;
++            if (std::filesystem::exists(polycube_final_path)) {
++                figure_commands.push_back("./figure_generator " + file_without_extension + " 0 " + output_path);
++            }
++            else {
++                coloredPrint("Skipping final-polycube figure: " + polycube_final_path
++                             + " not produced by this pipeline.", "yellow");
++            }
++            figure_commands.push_back("./figure_generator " + file_without_extension + " 1 " + output_path);
++            figure_commands.push_back("./figure_generator " + file_without_extension + " 4 " + output_path);
++
++            for (const auto& command_figure : figure_commands) {
++                int result_figures = system(command_figure.c_str());
++                if (result_figures != 0) {
++                    coloredPrint("WARNING: figure generation command failed: "
++                                 + command_figure, "yellow");
++                }
++            }
++        }
++        else {
++            coloredPrint("Skipping figure generation (--no-figures).", "yellow");
++        }
+@@ -315,0 +476,5 @@ int main(){
++
++    if (processed_entries == 0){
++        coloredPrint("WARNING: no ." + expected_extension
++                     + " files found in " + input_path, "yellow");
++    }

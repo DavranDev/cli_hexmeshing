@@ -41,14 +41,17 @@ Our Docker image is based on the **CUDA 12.4** container. It should be less or e
 
 - Docker Image based on CUDA 12.4: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags 
 - LibTorch 2.6.0: https://pytorch.org/get-started/locally/ 
-- Vulkan-SDK 1.3.268.0: https://vulkan.lunarg.com/sdk/home#linux
+- Vulkan SDK: downloaded by `setup.sh` from the current official LunarG Linux SDK URL and installed under `lib/vulkan-sdk`
 
 </details>
 
-In the host machine under the folder `AutoHexMesh`, run the following command to build the Docker image.
+In the host machine under the folder `AutoHexMesh`, run one command to download
+dependencies, build the Docker image, compile both codebases inside Docker, and
+run the headless NVIDIA smoke test:
 ```
-. ./setup.sh
+./setup.sh
 ```
+For a completely clean Docker-container run, use `./setup.sh --clean-containers`.
 
 ### 2 Enter the Docker container
 
@@ -69,11 +72,19 @@ sudo docker start [container id]
 sudo docker attach [container id]
 ```
 
-### 3 Compile the code every time you enter the container
+### 3 Compile the code
+`setup.sh` already compiles the code inside Docker. Re-run this manually only
+after editing C++ source:
+
 In the Docker container under the folder `/space`,
 ```
 . ./compile.sh
 ```
+`compile.sh` sources the Vulkan SDK from `/space/lib/vulkan-sdk` and also applies
+local reliability patches from `/space/patches` when needed. These keep a fresh
+recursive clone on the public submodule commits while still fixing the known
+Evocube `polycube_final.obj` post-processing segfault and the `hex` startup abort
+when Vulkan validation layers are unavailable.
 
 
 ## Run the code
@@ -84,6 +95,10 @@ In the container, to automatically generate polycube in the folder `./data/examp
 cd /space/evocube/build
 ./init_from_folder
 ```
+This pipeline writes the files needed by the next step, especially
+`tetra.mesh` and `fast_polycube_surf.obj`. It does not normally write
+`polycube_final.obj`; if you see `Skipping final-polycube measurement`, that is
+expected and safe.
 
 Or run the labeling module with GUI in the container
 ```
@@ -101,19 +116,28 @@ python3 build_hdf5.py --dir /space/output/examples/toy_plane
 ### 3 Run the interactive-hex-meshing
 In the container
 ```
-source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh
+source /space/lib/vulkan-sdk/setup-env.sh
+export VK_LAYER_PATH=$VULKAN_SDK/share/vulkan/explicit_layer.d
 cd /space/interactive-hex-meshing/bin/Release
 ./hex
 ```
 
+For a non-interactive sanity check of the command-line pipeline, run this from
+the host after compiling:
+```
+./cli_run/smoke_test.sh
+```
+The smoke test defaults to true headless mode and passes only when the final
+mesh has `total_hexes > 0` and `inverted_count == 0`.
+
 <details>
 <summary>Tips for Vulkan loading errors.</summary>
 Vulkan error is common in the Docker container. Please check the following tips to quickly solve the problems.
-- Source the vulkan sdk environment in the container. `source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh
-- Recompiling: always rebuild with `. ./compile.sh`, which sources the bundled SDK above *before* running cmake/make. Invoking cmake/make directly without that environment is what makes a **recompile** fail with Vulkan / `find_package(Vulkan)` errors even though the first build succeeded. Do **not** `apt install` a system Vulkan into the container as a workaround — a mismatched system loader/ICD can shadow the bundled SDK and cause ICD/loader crashes when you later run `hex`.
+- Source the Vulkan SDK environment in the container: `source /space/lib/vulkan-sdk/setup-env.sh`.
+- Recompiling: always rebuild with `. ./compile.sh`, which sources the bundled SDK above before running cmake/make. Invoking cmake/make directly without that environment can make a recompile fail with Vulkan / `find_package(Vulkan)` errors even though the first build succeeded. Do not `apt install` a system Vulkan into the container as a workaround; a mismatched system loader/ICD can shadow the bundled SDK and cause ICD/loader crashes when you later run `hex`.
 - `vulkaninfo --summary` in the container should return basic profile. There should be no error messages in the beginning lines about ICD, drivers or loading issues.
-- If there is a ICD error, try to move unrelated ICD json files in `/usr/share/vulkan/icd.d/` to other folders. In my cases, I moved `nouveau_icd.json` and `intel_icd.json` to other folders, while only keep `nvidia_icd.json` in the folder.
-- Check the docker run command to make sure the Vulkan library is properly loaded by mapping.
+- If there is an ICD error in the GUI container, prefer setting `VK_ICD_FILENAMES` to the intended ICD, for example `/usr/share/vulkan/icd.d/nvidia_icd.json`, instead of editing the host ICD directory.
+- For the self-contained Docker image, do not bind-mount the host `/usr/share/vulkan`; let the NVIDIA Container Toolkit inject the runtime driver libraries, or use the slim CPU/headless image with Mesa lavapipe.
 
 </details>
 
