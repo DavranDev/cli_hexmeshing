@@ -213,7 +213,11 @@ verify_nvidia_runtime() {
 
 run_checks() {
   echo "==> Running no-crash source/binary checks"
-  "$ROOT/scripts/verify_no_crash_fixes.sh"
+  "${docker_cmd[@]}" run --rm \
+    -v "$ROOT:/space" \
+    -w /space \
+    docker-hexmesh \
+    bash -lc 'export LD_LIBRARY_PATH="/space/lib/libtorch/lib:/space/lib/vulkan-sdk/x86_64/lib:/space/lib/vulkan-sdk/x86_64/lib/VulkanLoader/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; ./scripts/verify_no_crash_fixes.sh'
 }
 
 run_nvidia_smoke() {
