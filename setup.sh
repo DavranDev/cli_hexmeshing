@@ -15,6 +15,7 @@ LIBTORCH_URL="${LIBTORCH_URL:-https://download.pytorch.org/libtorch/cu124/libtor
 VULKAN_SDK_URL="${VULKAN_SDK_URL:-https://sdk.lunarg.com/sdk/download/latest/linux/vulkan-sdk.tar.xz}"
 RUN_SMOKE="${RUN_SMOKE:-1}"
 BUILD_SELF_CONTAINED="${BUILD_SELF_CONTAINED:-0}"
+NVIDIA_FIX="${NVIDIA_FIX:-1}"
 CLEAN_CONTAINERS=0
 
 usage() {
@@ -31,6 +32,8 @@ NVIDIA one-command setup:
 Options:
   --clean-containers  Remove all existing Docker containers before building.
   --no-smoke          Skip the final GPU smoke test.
+  --no-nvidia-fix     Do not auto-install/configure the NVIDIA Container
+                      Toolkit; only check it and error out if it is missing.
   --self-contained    Also build hexmesh-cli:latest from Dockerfile.build.
   -h, --help          Show this help.
 
@@ -38,6 +41,7 @@ Environment overrides:
   LIBTORCH_URL=...         Override the LibTorch download URL.
   VULKAN_SDK_URL=...       Override the LunarG Vulkan SDK download URL.
   RUN_SMOKE=0             Same as --no-smoke.
+  NVIDIA_FIX=0            Same as --no-nvidia-fix.
   BUILD_SELF_CONTAINED=1  Same as --self-contained.
 EOF
 }
@@ -46,6 +50,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --clean-containers) CLEAN_CONTAINERS=1; shift ;;
     --no-smoke) RUN_SMOKE=0; shift ;;
+    --no-nvidia-fix) NVIDIA_FIX=0; shift ;;
     --self-contained) BUILD_SELF_CONTAINED=1; shift ;;
     -h|--help) usage; return 0 2>/dev/null || exit 0 ;;
     *)
@@ -211,6 +216,81 @@ verify_nvidia_runtime() {
     nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi >/dev/null
 }
 
+nvidia_manual_steps() {
+  cat >&2 <<'EOF'
+Fix manually with:
+  sudo apt-get install -y nvidia-container-toolkit
+  sudo nvidia-ctk runtime configure --runtime=docker
+  sudo systemctl restart docker
+  sudo docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+(or run ./install_docker.sh, which installs Docker + the toolkit from scratch)
+EOF
+}
+
+# Install and configure the NVIDIA Container Toolkit so Docker can pass the GPU
+# into containers. Mirrors the toolkit steps in install_docker.sh, but is only
+# invoked when the runtime check has already failed, so it never touches a
+# machine where the runtime already works.
+install_nvidia_container_toolkit() {
+  # The repo-add below needs curl + gnupg; install_setup_tools does not cover them.
+  if ! command -v curl >/dev/null 2>&1 || ! command -v gpg >/dev/null 2>&1; then
+    echo "==> Installing curl + gnupg (needed to add the NVIDIA apt repo)"
+    "${sudo_cmd[@]}" apt-get update
+    "${sudo_cmd[@]}" apt-get install -y ca-certificates curl gnupg
+  fi
+
+  echo "==> Adding NVIDIA Container Toolkit apt repository"
+  curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+    | "${sudo_cmd[@]}" gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+  curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+    | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+    | "${sudo_cmd[@]}" tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
+
+  echo "==> Installing nvidia-container-toolkit"
+  "${sudo_cmd[@]}" apt-get update
+  "${sudo_cmd[@]}" apt-get install -y nvidia-container-toolkit
+
+  echo "==> Configuring the Docker runtime and restarting Docker"
+  "${sudo_cmd[@]}" nvidia-ctk runtime configure --runtime=docker
+  "${sudo_cmd[@]}" systemctl restart docker
+}
+
+# Make sure Docker can actually run GPU containers. If it already can, do
+# nothing. Otherwise, unless --no-nvidia-fix was passed, install + configure the
+# NVIDIA Container Toolkit and re-check.
+ensure_nvidia_runtime() {
+  echo "==> Checking NVIDIA Docker runtime"
+  if verify_nvidia_runtime; then
+    return 0
+  fi
+
+  if [[ "$NVIDIA_FIX" != "1" ]]; then
+    echo "ERROR: NVIDIA Docker runtime is not working, and --no-nvidia-fix was set." >&2
+    nvidia_manual_steps
+    exit 1
+  fi
+
+  # The toolkit can only bridge a driver that exists; a missing host driver is
+  # a separate problem we cannot fix here (it needs a driver install + reboot).
+  if ! command -v nvidia-smi >/dev/null 2>&1 || ! nvidia-smi -L >/dev/null 2>&1; then
+    echo "ERROR: Host NVIDIA driver not detected (nvidia-smi failed)." >&2
+    echo "       Install the GPU driver first; the container toolkit cannot bridge a driver that isn't there." >&2
+    exit 1
+  fi
+
+  echo "==> NVIDIA Docker runtime not working; installing/configuring the NVIDIA Container Toolkit"
+  install_nvidia_container_toolkit
+
+  if verify_nvidia_runtime; then
+    echo "==> NVIDIA Docker runtime now working"
+    return 0
+  fi
+
+  echo "ERROR: NVIDIA Docker runtime still not working after auto-install." >&2
+  nvidia_manual_steps
+  exit 1
+}
+
 run_checks() {
   echo "==> Running no-crash source/binary checks"
   "${docker_cmd[@]}" run --rm \
@@ -223,9 +303,7 @@ run_checks() {
 run_nvidia_smoke() {
   [[ "$RUN_SMOKE" == "1" ]] || { echo "==> Skipping smoke test"; return 0; }
 
-  echo "==> Checking NVIDIA Docker runtime"
-  verify_nvidia_runtime \
-    || { echo "ERROR: NVIDIA Docker runtime is not working; cannot run GPU smoke test." >&2; exit 1; }
+  ensure_nvidia_runtime
 
   echo "==> Running headless NVIDIA smoke test"
   "${docker_cmd[@]}" run --rm \
