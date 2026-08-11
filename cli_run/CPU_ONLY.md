@@ -1,11 +1,36 @@
 # CPU-only — implemented + per-stage verdict
 
+## Read this first: two different things are called "CPU-only"
+
+They are **not** interchangeable, and most confusion about this project comes from
+conflating them.
+
+| | **CPU runtime mode** | **CPU-only build** |
+|---|---|---|
+| Command | `hex --device cpu` | `./setup.sh --cpu` (`-DHEX_ENABLE_CUDA=OFF`) |
+| The binary | CUDA-enabled, operating on CPU tensors | Links **no CUDA at all** |
+| CUDA toolkit installed? | **Yes** — it is a hard compile-time dependency | No |
+| LibTorch | cu124 (~2.5 GB) | `+cpu` (~200 MB) |
+| NVIDIA Container Toolkit | Yes | No |
+| LunarG Vulkan SDK | Yes (~1.5 GB) | No — distro `libvulkan1` + lavapipe |
+| Since | 2026-06-18 (§5) | 2026-08-03 (§6) |
+
+Both produce the same numbers (18 526 hexes / 0 inverted). The difference is what
+has to be **installed** to get there. If the target machine has no NVIDIA GPU and
+you do not want the CUDA stack on it at all, you want the **CPU-only build** (§6).
+
+**amd64 only** — the lavapipe ICD manifest path is architecture-specific; ARM64 is
+documented as unsupported rather than silently broken.
+
+---
+
 > **STATUS: IMPLEMENTED & VALIDATED (2026-06-18).** The full pipeline now runs with
 > **no NVIDIA GPU**: `hex --device cpu --headless` ran all four stages on a box with
 > **no `--gpus` at all** (software Vulkan via lavapipe for the view device, CPU for
 > all compute) → **18 526 hexes, 0 inverted** — identical to the GPU run. The default
 > `--device cuda` path is unchanged (regression-checked: 18 526 / 0). §§2–4 below are
-> the original costing; **§5 records what was actually built.**
+> the original costing; **§5 records what was actually built**, and **§6 the
+> CUDA-free build that removes the toolkit dependency entirely.**
 
 **Question (Ronald #13):** can the pipeline run without an NVIDIA GPU, and how much
 work is each stage? Answer: **yes, all of it now** — via a `--device cpu` knob plus
@@ -212,3 +237,199 @@ PASSes (18 526 / 0).
 The CPU kernel loops are **serial**. They are embarrassingly parallel over query
 points; switching to `at::parallel_for` (libtorch's thread pool, no `-fopenmp`/nvcc
 issue) would cut the ~6-min chain substantially. Deferred — correctness first.
+
+---
+
+## 6. CPU-only **build** (2026-08-03) — CUDA is no longer a compile-time dependency
+
+§5 removed CUDA from the *run*. It did not remove it from the *build*: CUDA was
+still required to compile, so the only way to run GPU-free was to install the
+entire CUDA stack and then not use it. §6 removes that.
+
+### What changed
+
+| Piece | Before | After |
+|---|---|---|
+| Build option | none — CUDA always compiled in | `-DHEX_ENABLE_CUDA=ON` (default) / `OFF` |
+| geomlib `.cu` files | always compiled | added to the target **only** when the option is ON |
+| `hex` CUDA includes | `c10/cuda/CUDACachingAllocator.h`, unconditional | behind `#if HEX_ENABLE_CUDA` |
+| Setup | `./setup.sh` | `./setup.sh` **or** `./setup.sh --cpu` |
+| Image | `docker-hexmesh` (16.1 GB) | `hexmesh-cpu:latest` (**1.84 GB**) |
+
+The option is exported to C++ as a **numeric** `HEX_ENABLE_CUDA=0/1`, and every
+guard is `#if HEX_ENABLE_CUDA` — never `#ifdef`, which would be true even when the
+option is OFF.
+
+Rather than compiling `.cu` files as C++, the kernels were split so that plain
+g++ never sees a `.cu` at all. Per kernel pair, in `geomlib/geomlib/`:
+
+| File | Contents | Compiled in |
+|---|---|---|
+| `*_impl.h` | the shared `__host__ __device__` per-element math | every build |
+| `*.cpp` | CPU reference loops, the public dispatcher, explicit instantiations | every build |
+| `*_cuda.h` | the `…Cuda()` entry points, whole file behind `#if HEX_ENABLE_CUDA` | CUDA builds |
+| `*_cuda.cu` | `__global__` kernels + those entry points | CUDA builds |
+
+`__global__` is deliberately **not** defined away in `cuda_compat.h`: kernels are
+excluded by the file split, and an empty `__global__` would let a kernel that
+leaked into a host TU compile as ordinary — and silently wrong — host code.
+
+Dispatchers also now verify that related tensors share a device before taking raw
+pointers. Branching on `points.is_cuda()` alone was not enough: CPU `points` with
+CUDA `vertices` handed a device pointer to the host loop and **segfaulted** rather
+than raising.
+
+### Using it
+
+```bash
+./setup.sh --cpu          # no CUDA toolkit, no cu124 LibTorch, no Container
+                          # Toolkit, no LunarG SDK -- none are downloaded
+
+HEX_IMAGE_VARIANT=cpu ./cli_run/run.sh deform \
+    interactive-hex-meshing/assets/tutorial/spot.mesh --headless --device cpu
+```
+
+`HEX_IMAGE_VARIANT` picks the **image/build**; `--device` picks the **compute
+device**. A CUDA-enabled image can legitimately run its CPU path, so CPU launch
+mode is never inferred from `--device cpu`. All three launchers
+(`cli_run/run.sh`, `./hex`, `run_docker.sh`) assemble their docker command line
+from `cli_run/lib/docker_args.sh`, so the CPU variant cannot pick up a stray
+`--gpus` / `--runtime=nvidia` / NVIDIA ICD mount;
+`scripts/test_docker_args.sh` asserts exactly that.
+
+Both variants still build into the same `bin/Release/hex`, so a CPU build
+overwrites a CUDA one. `compile.sh` records which produced it in
+`bin/Release/.hexmesh-variant`, and the launchers refuse a mismatched run.
+`lib/libtorch/.hexmesh-variant` does the same for the LibTorch install, so a
+cu124 tree can never silently satisfy a `--cpu` setup.
+
+### Switching a machine between the two variants
+
+There is one **active** LibTorch at `lib/libtorch`; any other variant is
+**parked** next to it as `lib/libtorch-<variant>`:
+
+```
+lib/
+  libtorch/          <- active   (.hexmesh-variant says which)
+  libtorch-cu124/    <- parked, reused on the way back
+```
+
+`install_libtorch` parks the outgoing tree instead of deleting it, and activates
+a parked tree of the wanted variant instead of downloading one. Switching is
+then a rename:
+
+```bash
+./setup.sh --cpu     # parks cu124, activates cpu    -- seconds, no download
+./setup.sh           # parks cpu,   activates cu124  -- seconds, no download
+```
+
+A parked tree is never trusted on the strength of its directory name: it is
+re-validated (`build-version` matches the expected `<version>+<variant>`, and
+the CUDA `.so` set agrees with the claim) before being activated. An
+unidentifiable tree is parked under a timestamped name rather than deleted —
+this script should never be the reason a multi-GB download is lost.
+
+Note this only affects the **host-mounted developer workflow**. The shipped
+`hexmesh-cpu:latest` bakes its own `+cpu` LibTorch in the `libs` stage and never
+reads the host `lib/`, so the parked cu124 tree cannot leak into it.
+
+Why it matters on a dual-use box: the CUDA-built `hex` links `libtorch_cuda.so`
+and `libc10_cuda.so`. Point it at a `+cpu` tree and 6 libraries go unresolved —
+so the variants genuinely cannot share one directory, and without parking a
+switch back costs a ~2.5 GB re-download.
+
+### Validation (2026-08-03, no NVIDIA driver, no `--gpus`, no CUDA installed)
+
+| Check | Result |
+|---|---|
+| **A** geomlib unit tests, CPU-only build | **PASS — 70 checks** |
+| A′ same tests, CUDA build on an RTX 4090 | **PASS — 146 checks** (70 CPU + 70 CUDA + 6 mixed-device) |
+| **B** no CUDA dependency in any shipped ELF under `/space` | **PASS** |
+| **C** no CUDA/NVIDIA/cuDNN/NCCL package installed | **PASS** |
+| **D** Vulkan is a software device | **PASS** — `llvmpipe`, `PHYSICAL_DEVICE_TYPE_CPU` |
+| **E** four stages run separately, chained | **PASS** — 5 s / 74 s / <1 s / 266 s (345 s total) |
+| **F** artifact parity vs pre-change baseline | **PASS** — see §6.1 |
+| **G** `SMOKE_DEVICE=cpu ./cli_run/smoke_test.sh` | **PASS** — 18 526 / 0 |
+| **H** GPU regression: `./setup.sh --no-smoke && ./cli_run/smoke_test.sh` | **PASS** — 18 526 / 0 on an RTX 4090 |
+
+### 6.1 Verification F — artifact parity
+
+`18526 / 0` is an acceptance check, not proof that the meshing result was
+preserved. F compares the artifacts themselves.
+
+**Baseline.** The correctness reference is the **pre-change source tree built
+with CUDA and run with `--device cpu`** — not a GPU run. That holds the tensor
+backend and the CPU kernels fixed, so the comparison isolates the effect of the
+translation-unit/CMake split from ordinary CPU-versus-GPU floating-point and
+reduction-order differences. The pipeline already fixes its seeds
+(`torch::manual_seed(42)`, `std::default_random_engine(42)`).
+
+**This pipeline is not run-to-run deterministic.** Two runs of the *same* build
+differ, so a zero tolerance is unattainable and had to be measured rather than
+assumed:
+
+| Field | baseline-vs-baseline spread (same build, two runs) |
+|---|---|
+| `deformed_volume_mesh/vertices` | max 3.9e-4 |
+| `deformed_volume_mesh/sdf` | max 5.1e-4 |
+| `polycube/params` | max 6.6e-3 |
+| `result.mesh` vertices | max 6.8e-2, **p99 3.4e-3, median 3.0e-4** (9 of 16 729 vertices exceed 1e-2) |
+| `polycube_info/names` | 32–47 of 256 bytes differ (a name table, not geometry) |
+
+Those measured spreads (×4 margin) become the recorded tolerances. Topology is
+deliberately **excluded** from tolerance eligibility: if connectivity were
+unstable that is a bug to fix, not to tolerate.
+
+**Result: PASS.** CPU-only build vs pre-change baseline:
+
+- **Every topology field bit-identical** — `tets`, `quads`, `hexes`, `patches`,
+  `ordering`, `locked`, across all four stages, plus `result.mesh` canonical hex
+  connectivity (18 526 hexes) and `polycube_complex/vertices` (exactly 0.0
+  difference).
+- **Every float field within the measured run-to-run tolerance**, and at
+  comparable magnitude to it — e.g. deformed vertices max 4.2e-4 against a
+  baseline self-spread of 3.9e-4. The CPU-only build differs from the baseline
+  about as much as the baseline differs from itself.
+- **Quality statistics within tolerance**: scaled-Jacobian and Jacobian
+  min/max/mean/std all pass; `inverted_count` is 0.
+- 3 notes, all `polycube_info/names` — recorded as nondeterministic, never
+  silently skipped.
+
+**The gate is not vacuous.** A negative control that flips a *single* quad
+connectivity index out of 15 168 fails it, naming the dataset and flat index.
+
+Reproduce:
+
+```bash
+scripts/collect_pipeline_artifacts.sh output spot /tmp/candidate
+scripts/compare_pipeline_artifacts.py compare BASELINE /tmp/candidate \
+    -t cli_run/baselines/tolerances.json
+```
+
+`scripts/compare_pipeline_artifacts.py` needs `h5py` + `numpy`, both already in
+`docker-hexmesh`. It does **not** use meshio for `result.mesh`: meshio's MEDIT
+reader requires the element count on the line after the section keyword, while
+`hex` writes `Vertices 16729` on one line, so a small built-in MEDIT parser is
+used instead (validated against the file's declared counts).
+
+The committed baseline is
+[baselines/spot_cpu_device_baseline.json](baselines/spot_cpu_device_baseline.json)
+— a compact manifest of hashes, shapes, counts, statistics and the chosen
+tolerances. The large HDF5 artifacts are deliberately not committed.
+
+F is an *acceptance* gate, not a proof of numerical identity: matching final
+metrics does not establish that intermediate results are bitwise or
+field-by-field identical to the GPU run.
+
+Timings match §5's CPU-runtime-mode numbers, as expected — this work changed what
+gets **linked**, not the arithmetic. The serial-loop caveat from §5 stands
+unchanged.
+
+### Still out of scope
+
+- **Vulkan is still a build dependency.** `hex` constructs a Vulkan device even
+  headless; the CPU image satisfies it in software with Mesa lavapipe. A real
+  `HEX_ENABLE_VULKAN=OFF` build is separate work — see
+  [../plans/no-vulkan-headless.md](../plans/no-vulkan-headless.md).
+- **ARM64.** The lavapipe ICD manifest path is architecture-specific; amd64 only.
+- **CPU parallelisation.** Still deferred; `at::parallel_for` is a follow-up.

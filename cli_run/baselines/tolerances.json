@@ -1,0 +1,241 @@
+{
+  "_comment": "Tolerances measured from two runs of the SAME build; each value is the observed run-to-run spread multiplied by the margin below. A field listed here is nondeterministic in this pipeline. Fields not listed must match exactly.",
+  "margin": 4.0,
+  "nondeterministic_exact": {
+    "stage_1_decomposition.hdf5:polycube_info/names": {
+      "differing_elements": 47,
+      "note": "integer/metadata field, unstable across runs of the same build",
+      "size": 256
+    },
+    "stage_2_discretization.hdf5:polycube_info/names": {
+      "differing_elements": 32,
+      "note": "integer/metadata field, unstable across runs of the same build",
+      "size": 256
+    },
+    "stage_3_hexahedralization.hdf5:polycube_info/names": {
+      "differing_elements": 32,
+      "note": "integer/metadata field, unstable across runs of the same build",
+      "size": 256
+    }
+  },
+  "run_a": "(pre-change CUDA build, --device cpu, run 1)",
+  "run_b": "(pre-change CUDA build, --device cpu, run 2)",
+  "tolerances": {
+    "result.mesh:points": {
+      "atol": 0.270032,
+      "count": 50187,
+      "observed_atol": 0.067508,
+      "observed_p50": 0.00013900000000000023,
+      "observed_p99": 0.00237900000000002,
+      "observed_rel": 1.9895652173913045,
+      "rtol": 7.958260869565218
+    },
+    "result_metrics.yaml:jacobian.max": {
+      "atol": 5.751615999999944e-06,
+      "count": 1,
+      "observed_atol": 1.437903999999986e-06,
+      "observed_p50": 1.437903999999986e-06,
+      "observed_p99": 1.437903999999986e-06,
+      "observed_rel": 0.009843831899063741,
+      "rtol": 0.039375327596254964
+    },
+    "result_metrics.yaml:jacobian.mean": {
+      "atol": 7.433120000001521e-08,
+      "count": 1,
+      "observed_atol": 1.8582800000003803e-08,
+      "observed_p50": 1.8582800000003803e-08,
+      "observed_p99": 1.8582800000003803e-08,
+      "observed_rel": 0.0002749255455721352,
+      "rtol": 0.0010997021822885407
+    },
+    "result_metrics.yaml:jacobian.min": {
+      "atol": 8.788627999999982e-08,
+      "count": 1,
+      "observed_atol": 2.1971569999999955e-08,
+      "observed_p50": 2.1971569999999955e-08,
+      "observed_p99": 2.1971569999999955e-08,
+      "observed_rel": 0.0029584262196966395,
+      "rtol": 0.011833704878786558
+    },
+    "result_metrics.yaml:jacobian.std": {
+      "atol": 6.065239999999939e-08,
+      "count": 1,
+      "observed_atol": 1.5163099999999848e-08,
+      "observed_p50": 1.5163099999999848e-08,
+      "observed_p99": 1.5163099999999848e-08,
+      "observed_rel": 0.0006841130541995357,
+      "rtol": 0.0027364522167981427
+    },
+    "result_metrics.yaml:scaled_jacobian.max": {
+      "atol": 9.131199999989903e-05,
+      "count": 1,
+      "observed_atol": 2.2827999999974757e-05,
+      "observed_p50": 2.2827999999974757e-05,
+      "observed_p99": 2.2827999999974757e-05,
+      "observed_rel": 2.2832485601598592e-05,
+      "rtol": 9.132994240639437e-05
+    },
+    "result_metrics.yaml:scaled_jacobian.mean": {
+      "atol": 0.0003657360000000054,
+      "count": 1,
+      "observed_atol": 9.143400000000135e-05,
+      "observed_p50": 9.143400000000135e-05,
+      "observed_p99": 9.143400000000135e-05,
+      "observed_rel": 0.00010602145277782978,
+      "rtol": 0.0004240858111113191
+    },
+    "result_metrics.yaml:scaled_jacobian.min": {
+      "atol": 0.002694770799999996,
+      "count": 1,
+      "observed_atol": 0.000673692699999999,
+      "observed_p50": 0.000673692699999999,
+      "observed_p99": 0.000673692699999999,
+      "observed_rel": 0.02755193696591621,
+      "rtol": 0.11020774786366484
+    },
+    "result_metrics.yaml:scaled_jacobian.std": {
+      "atol": 0.00114548400000003,
+      "count": 1,
+      "observed_atol": 0.0002863710000000075,
+      "observed_p50": 0.0002863710000000075,
+      "observed_p99": 0.0002863710000000075,
+      "observed_rel": 0.0017026655877824767,
+      "rtol": 0.006810662351129907
+    },
+    "stage_0_deformation.hdf5:deformed_volume_mesh/vertices": {
+      "atol": 0.001554727554321289,
+      "count": 10377,
+      "observed_atol": 0.00038868188858032227,
+      "observed_p50": 4.303455352783203e-05,
+      "observed_p99": 0.0001795923709869384,
+      "observed_rel": 1.5026238201233932,
+      "rtol": 6.010495280493573
+    },
+    "stage_1_decomposition.hdf5:deformed_volume_mesh/anchors": {
+      "atol": 0.001554727554321289,
+      "count": 101472,
+      "observed_atol": 0.00038868188858032227,
+      "observed_p50": 3.075599670410156e-05,
+      "observed_p99": 0.0001637829840183257,
+      "observed_rel": 1.3921715282971827,
+      "rtol": 5.568686113188731
+    },
+    "stage_1_decomposition.hdf5:deformed_volume_mesh/sdf": {
+      "atol": 0.0020380020141601562,
+      "count": 33824,
+      "observed_atol": 0.0005095005035400391,
+      "observed_p50": 4.9054622650146484e-05,
+      "observed_p99": 0.00023017331259325124,
+      "observed_rel": 1.9658303881052601,
+      "rtol": 7.8633215524210405
+    },
+    "stage_1_decomposition.hdf5:deformed_volume_mesh/vertices": {
+      "atol": 0.001554727554321289,
+      "count": 10377,
+      "observed_atol": 0.00038868188858032227,
+      "observed_p50": 4.303455352783203e-05,
+      "observed_p99": 0.0001795923709869384,
+      "observed_rel": 1.5026238201233932,
+      "rtol": 6.010495280493573
+    },
+    "stage_1_decomposition.hdf5:polycube/params": {
+      "atol": 0.026519298553466797,
+      "count": 48,
+      "observed_atol": 0.006629824638366699,
+      "observed_p50": 0.00012370944023132324,
+      "observed_p99": 0.00654597818851471,
+      "observed_rel": 0.23943434343434344,
+      "rtol": 0.9577373737373738
+    },
+    "stage_2_discretization.hdf5:deformed_volume_mesh/anchors": {
+      "atol": 0.001554727554321289,
+      "count": 101472,
+      "observed_atol": 0.00038868188858032227,
+      "observed_p50": 3.075599670410156e-05,
+      "observed_p99": 0.0001637829840183257,
+      "observed_rel": 1.3921715282971827,
+      "rtol": 5.568686113188731
+    },
+    "stage_2_discretization.hdf5:deformed_volume_mesh/sdf": {
+      "atol": 0.0020380020141601562,
+      "count": 33824,
+      "observed_atol": 0.0005095005035400391,
+      "observed_p50": 4.9054622650146484e-05,
+      "observed_p99": 0.00023017331259325124,
+      "observed_rel": 1.9658303881052601,
+      "rtol": 7.8633215524210405
+    },
+    "stage_2_discretization.hdf5:deformed_volume_mesh/vertices": {
+      "atol": 0.001554727554321289,
+      "count": 10377,
+      "observed_atol": 0.00038868188858032227,
+      "observed_p50": 4.303455352783203e-05,
+      "observed_p99": 0.0001795923709869384,
+      "observed_rel": 1.5026238201233932,
+      "rtol": 6.010495280493573
+    },
+    "stage_2_discretization.hdf5:polycube/params": {
+      "atol": 0.026519298553466797,
+      "count": 48,
+      "observed_atol": 0.006629824638366699,
+      "observed_p50": 0.00012370944023132324,
+      "observed_p99": 0.00654597818851471,
+      "observed_rel": 0.23943434343434344,
+      "rtol": 0.9577373737373738
+    },
+    "stage_3_hexahedralization.hdf5:deformed_volume_mesh/anchors": {
+      "atol": 0.001554727554321289,
+      "count": 101472,
+      "observed_atol": 0.00038868188858032227,
+      "observed_p50": 3.075599670410156e-05,
+      "observed_p99": 0.0001637829840183257,
+      "observed_rel": 1.3921715282971827,
+      "rtol": 5.568686113188731
+    },
+    "stage_3_hexahedralization.hdf5:deformed_volume_mesh/sdf": {
+      "atol": 0.0020380020141601562,
+      "count": 33824,
+      "observed_atol": 0.0005095005035400391,
+      "observed_p50": 4.9054622650146484e-05,
+      "observed_p99": 0.00023017331259325124,
+      "observed_rel": 1.9658303881052601,
+      "rtol": 7.8633215524210405
+    },
+    "stage_3_hexahedralization.hdf5:deformed_volume_mesh/vertices": {
+      "atol": 0.001554727554321289,
+      "count": 10377,
+      "observed_atol": 0.00038868188858032227,
+      "observed_p50": 4.303455352783203e-05,
+      "observed_p99": 0.0001795923709869384,
+      "observed_rel": 1.5026238201233932,
+      "rtol": 6.010495280493573
+    },
+    "stage_3_hexahedralization.hdf5:polycube/params": {
+      "atol": 0.026519298553466797,
+      "count": 48,
+      "observed_atol": 0.006629824638366699,
+      "observed_p50": 0.00012370944023132324,
+      "observed_p99": 0.00654597818851471,
+      "observed_rel": 0.23943434343434344,
+      "rtol": 0.9577373737373738
+    },
+    "stage_3_hexahedralization.hdf5:result_mesh/vertices": {
+      "atol": 0.27003196626901627,
+      "count": 50187,
+      "observed_atol": 0.06750799156725407,
+      "observed_p50": 0.00013887882232666016,
+      "observed_p99": 0.0023786790668964383,
+      "observed_rel": 1.988863129944486,
+      "rtol": 7.955452519777944
+    },
+    "stage_3_hexahedralization.hdf5:target_complex/vertices": {
+      "atol": 0.27003196626901627,
+      "count": 50187,
+      "observed_atol": 0.06750799156725407,
+      "observed_p50": 0.00013887882232666016,
+      "observed_p99": 0.0023786790668964383,
+      "observed_rel": 1.988863129944486,
+      "rtol": 7.955452519777944
+    }
+  }
+}

@@ -11,35 +11,73 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-LIBTORCH_URL="${LIBTORCH_URL:-https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip}"
 VULKAN_SDK_URL="${VULKAN_SDK_URL:-https://sdk.lunarg.com/sdk/download/latest/linux/vulkan-sdk.tar.xz}"
 RUN_SMOKE="${RUN_SMOKE:-1}"
 BUILD_SELF_CONTAINED="${BUILD_SELF_CONTAINED:-0}"
 NVIDIA_FIX="${NVIDIA_FIX:-1}"
 CLEAN_CONTAINERS=0
 
+# CPU-only *build*: no CUDA toolkit, no CUDA LibTorch, no NVIDIA Container
+# Toolkit, no LunarG Vulkan SDK. Distinct from `hex --device cpu`, which is a
+# runtime device choice a CUDA-enabled build also supports.
+HEX_CPU_ONLY="${HEX_CPU_ONLY:-0}"
+
+# LibTorch identity. These are the same constants Dockerfile.cpu takes as build
+# arguments; the two consumers must not drift, so both record them in
+# lib/libtorch/.hexmesh-variant.
+LIBTORCH_VERSION="${LIBTORCH_VERSION:-2.6.0}"
+LIBTORCH_ABI="${LIBTORCH_ABI:-cxx11}"
+
 usage() {
   cat <<'EOF'
-Usage: ./setup.sh [--clean-containers] [--no-smoke] [--self-contained]
+Usage: ./setup.sh [--cpu] [--clean-containers] [--no-smoke] [--self-contained]
 
-NVIDIA one-command setup:
-  1. downloads LibTorch + current LunarG Vulkan SDK if missing
-  2. builds docker-hexmesh
-  3. compiles evocube + hex inside Docker
-  4. runs no-crash checks
-  5. runs the headless NVIDIA smoke test unless --no-smoke is passed
+One-command setup. Two variants:
+
+  ./setup.sh          CUDA + Vulkan renderer (needs an NVIDIA GPU + driver)
+    1. downloads the cu124 LibTorch + current LunarG Vulkan SDK if missing
+    2. builds docker-hexmesh
+    3. compiles evocube + hex inside Docker
+    4. runs no-crash checks
+    5. runs the headless NVIDIA smoke test unless --no-smoke is passed
+
+  ./setup.sh --cpu    CPU-only build + Vulkan renderer (no GPU at all)
+    1. activates the +cpu LibTorch (downloading it only if not already parked);
+       NO Vulkan SDK (uses the distro loader) and NO NVIDIA Container Toolkit
+    2. builds hexmesh-cpu:build and hexmesh-cpu:latest from Dockerfile.cpu
+    3. compiles evocube + hex with -DHEX_ENABLE_CUDA=OFF
+    4. runs no-crash checks
+    5. runs the headless CPU smoke test (SMOKE_DEVICE=cpu, no --gpus)
 
 Options:
+  --cpu               CPU-only build: link no CUDA at all. amd64 only.
   --clean-containers  Remove all existing Docker containers before building.
-  --no-smoke          Skip the final GPU smoke test.
+  --no-smoke          Skip the final smoke test.
   --no-nvidia-fix     Do not auto-install/configure the NVIDIA Container
                       Toolkit; only check it and error out if it is missing.
+                      Ignored with --cpu, which never touches the toolkit.
   --self-contained    Also build hexmesh-cli:latest from Dockerfile.build.
+                      Ignored with --cpu (Dockerfile.cpu is already
+                      self-contained).
   -h, --help          Show this help.
 
+LibTorch variants:
+  One variant is active at lib/libtorch; the other is parked beside it as
+  lib/libtorch-<variant> and reused on the way back, so switching between the
+  CUDA and CPU builds is a rename rather than a multi-GB re-download. A parked
+  tree is re-validated (build-version and the CUDA .so set must agree) before it
+  is activated, and an unidentifiable tree is parked under a timestamped name
+  rather than deleted. Only the active tree is ever on the include/link path.
+
+  Switching variants invalidates an existing build directory, because CMake
+  caches absolute paths to the LibTorch .so files. compile.sh detects that and
+  reconfigures from scratch.
+
 Environment overrides:
-  LIBTORCH_URL=...         Override the LibTorch download URL.
+  LIBTORCH_URL=...         Override the LibTorch download URL. Must match the
+                           selected variant; setup.sh validates the archive.
   VULKAN_SDK_URL=...       Override the LunarG Vulkan SDK download URL.
+  HEX_CPU_ONLY=1          Same as --cpu.
   RUN_SMOKE=0             Same as --no-smoke.
   NVIDIA_FIX=0            Same as --no-nvidia-fix.
   BUILD_SELF_CONTAINED=1  Same as --self-contained.
@@ -48,6 +86,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --cpu) HEX_CPU_ONLY=1; shift ;;
     --clean-containers) CLEAN_CONTAINERS=1; shift ;;
     --no-smoke) RUN_SMOKE=0; shift ;;
     --no-nvidia-fix) NVIDIA_FIX=0; shift ;;
@@ -60,6 +99,17 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Resolved after parsing, so --cpu can select the archive.
+if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+  LIBTORCH_VARIANT="cpu"
+  LIBTORCH_URL="${LIBTORCH_URL:-https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcpu.zip}"
+  echo "==> Build variant: CPU-only (no CUDA will be installed or linked)"
+else
+  LIBTORCH_VARIANT="cu124"
+  LIBTORCH_URL="${LIBTORCH_URL:-https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip}"
+  echo "==> Build variant: CUDA (cu124)"
+fi
 
 sudo_cmd=()
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -112,6 +162,13 @@ install_setup_tools() {
 }
 
 install_host_vulkan_tools() {
+  # Host-side NVIDIA/Vulkan diagnostics are not part of the CPU-only path; the
+  # CPU images carry their own vulkan-tools for the checks that matter there.
+  if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+    echo "==> Skipping host Vulkan tools (CPU-only build)"
+    return 0
+  fi
+
   if command -v vulkaninfo >/dev/null 2>&1; then
     echo "==> Host Vulkan tools already installed"
     return 0
@@ -124,35 +181,147 @@ install_host_vulkan_tools() {
 
 mkdir -p lib output
 
-install_libtorch() {
-  if [[ -d lib/libtorch ]]; then
-    echo "==> LibTorch already installed at lib/libtorch"
-    return
-  fi
+LIBTORCH_MARKER="lib/libtorch/.hexmesh-variant"
 
-  local archive="libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip"
-  local tmp_archive=""
-  if [[ ! -f "$archive" ]]; then
-    tmp_archive="$(mktemp --suffix=.zip)"
-    echo "==> Downloading LibTorch"
-    wget -O "$tmp_archive" "$LIBTORCH_URL"
-    archive="$tmp_archive"
+# Variants are kept side by side: the active one is lib/libtorch, any other is
+# parked at lib/libtorch-<variant>. Switching between CUDA and CPU is then a
+# rename instead of a multi-GB re-download, which matters on a machine that
+# builds both. Only the *active* tree is ever on the include/link path, so the
+# CPU-only guarantee is unaffected by a parked cu124 tree sitting next to it.
+libtorch_park_dir() { printf 'lib/libtorch-%s' "$1"; }
+
+# Echoes the variant a tree claims, or nothing. Prefers the marker; otherwise
+# reads LibTorch's own build-version. Reading the tree's stated identity is not
+# the same as guessing at it -- validate_libtorch_tree then has to agree.
+libtorch_variant_of() {
+  local dir="$1" bv
+  if [[ -f "$dir/.hexmesh-variant" ]]; then
+    sed -n 's/^variant=//p' "$dir/.hexmesh-variant" | head -n 1
+    return 0
+  fi
+  [[ -f "$dir/build-version" ]] || return 0
+  bv="$(tr -d '[:space:]' < "$dir/build-version")"
+  [[ "$bv" == *+* ]] || return 0
+  printf '%s' "${bv##*+}"
+}
+
+# True only if <dir> really is a usable LibTorch of <variant>. Used for both a
+# freshly downloaded tree and a parked one, so a parked tree can never be
+# activated on the strength of its directory name alone.
+validate_libtorch_tree() {
+  local dir="$1" variant="$2" why=""
+  if   [[ ! -f "$dir/build-version" ]]; then why="no build-version"
+  elif ! grep -qx "${LIBTORCH_VERSION}+${variant}" "$dir/build-version"; then
+    why="build-version is '$(tr -d '[:space:]' < "$dir/build-version")', expected '${LIBTORCH_VERSION}+${variant}'"
+  elif [[ ! -f "$dir/lib/libtorch_cpu.so" ]]; then why="missing lib/libtorch_cpu.so"
+  elif [[ "$variant" == "cpu" ]] && ls "$dir/lib" 2>/dev/null | grep -Eiq 'cuda|cudnn|nvrtc|nccl'; then
+    why="a +cpu tree must not ship CUDA libraries"
+  elif [[ "$variant" != "cpu" && ! -f "$dir/lib/libtorch_cuda.so" ]]; then
+    why="a CUDA tree must ship libtorch_cuda.so"
+  fi
+  if [[ -n "$why" ]]; then
+    LIBTORCH_INVALID_REASON="$why"
+    return 1
+  fi
+}
+
+write_libtorch_marker() {
+  printf 'variant=%s\nversion=%s\nabi=%s\n' \
+    "$1" "$LIBTORCH_VERSION" "$LIBTORCH_ABI" > "$2/.hexmesh-variant"
+}
+
+# Moves the currently active tree out of the way instead of deleting it, so
+# switching back later costs a rename. An unidentifiable tree is parked under a
+# timestamp rather than removed -- this script should never be the reason a
+# multi-GB download is lost.
+park_active_libtorch() {
+  local have="$1" park
+  if [[ -n "$have" ]]; then
+    park="$(libtorch_park_dir "$have")"
   else
-    echo "==> Using existing $archive"
+    park="lib/libtorch-unidentified-$(date +%Y%m%d%H%M%S)"
+  fi
+  if [[ -e "$park" && -n "$have" ]]; then
+    # The active tree is authoritative for its variant; drop the stale copy.
+    echo "==> Replacing the previously parked $park"
+    rm -rf "$park"
+  fi
+  mv lib/libtorch "$park"
+  echo "==> Parked the ${have:-unidentified} LibTorch at $park (kept, not deleted)"
+}
+
+# The "already installed, skip" check cannot just test for the directory: a
+# cu124 tree would happily satisfy a --cpu run and undermine the entire
+# guarantee. The marker records what is actually installed.
+install_libtorch() {
+  local want="$LIBTORCH_VARIANT"
+  local have="" park tmp_dir
+  LIBTORCH_INVALID_REASON=""
+
+  if [[ -d lib/libtorch ]]; then
+    have="$(libtorch_variant_of lib/libtorch)"
+    if [[ -n "$have" ]] && validate_libtorch_tree lib/libtorch "$have"; then
+      if [[ "$have" == "$want" ]]; then
+        write_libtorch_marker "$have" lib/libtorch
+        echo "==> LibTorch already active: variant=$have version=$LIBTORCH_VERSION abi=$LIBTORCH_ABI"
+        return
+      fi
+      echo "==> lib/libtorch holds the '$have' variant, but '$want' is required."
+    else
+      echo "==> lib/libtorch could not be identified (${LIBTORCH_INVALID_REASON:-no version info}); it will be parked, not trusted."
+      have=""
+    fi
+    park_active_libtorch "$have"
   fi
 
-  rm -rf lib/libtorch
-  unzip -q "$archive" -d lib
-
-  if [[ -n "$tmp_archive" ]]; then
-    rm -f "$tmp_archive"
+  # Reuse a previously parked tree of the wanted variant before downloading.
+  park="$(libtorch_park_dir "$want")"
+  if [[ -d "$park" ]]; then
+    if validate_libtorch_tree "$park" "$want"; then
+      mv "$park" lib/libtorch
+      write_libtorch_marker "$want" lib/libtorch
+      echo "==> Activated the parked $want LibTorch (no download needed)"
+      echo "==> LibTorch active: variant=$want version=$LIBTORCH_VERSION abi=$LIBTORCH_ABI"
+      return
+    fi
+    echo "==> Ignoring $park: $LIBTORCH_INVALID_REASON"
   fi
 
-  test -d lib/libtorch \
-    || { echo "ERROR: LibTorch extraction did not create lib/libtorch" >&2; exit 1; }
+  # Download and validate into a temp dir; nothing is moved into place until a
+  # verified tree exists.
+  tmp_dir="$(mktemp -d)"
+  echo "==> Downloading LibTorch (variant=$want version=$LIBTORCH_VERSION abi=$LIBTORCH_ABI)"
+  wget -O "$tmp_dir/libtorch.zip" "$LIBTORCH_URL"
+  unzip -q "$tmp_dir/libtorch.zip" -d "$tmp_dir"
+
+  if [[ ! -d "$tmp_dir/libtorch" ]]; then
+    echo "ERROR: LibTorch archive did not contain a libtorch/ directory" >&2
+    echo "       URL: $LIBTORCH_URL" >&2
+    rm -rf "$tmp_dir"; exit 1
+  fi
+  if ! validate_libtorch_tree "$tmp_dir/libtorch" "$want"; then
+    echo "ERROR: downloaded LibTorch is not a valid '$want' tree: $LIBTORCH_INVALID_REASON" >&2
+    echo "       URL: $LIBTORCH_URL" >&2
+    rm -rf "$tmp_dir"; exit 1
+  fi
+
+  mv "$tmp_dir/libtorch" lib/libtorch
+  rm -rf "$tmp_dir"
+  write_libtorch_marker "$want" lib/libtorch
+  echo "==> LibTorch installed: variant=$want version=$LIBTORCH_VERSION abi=$LIBTORCH_ABI"
 }
 
 install_vulkan_sdk() {
+  # A CPU-only install takes Vulkan from the distro (libvulkan-dev +
+  # mesa-vulkan-drivers, inside Dockerfile.cpu). The ~1.5 GB LunarG SDK only
+  # supplied the loader, headers and validation layers, and
+  # vkoo/src/core/Instance.cpp already falls back cleanly with no validation
+  # layer present.
+  if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+    echo "==> Skipping the LunarG Vulkan SDK (CPU-only build uses the distro loader)"
+    return
+  fi
+
   if [[ -f lib/vulkan-sdk/setup-env.sh && -d lib/vulkan-sdk/x86_64 ]]; then
     echo "==> Vulkan SDK already installed at lib/vulkan-sdk"
     return
@@ -188,24 +357,54 @@ install_vulkan_sdk() {
 
 }
 
+# The image the compile + checks run in, per variant.
+build_image_name() {
+  if [[ "$HEX_CPU_ONLY" == 1 ]]; then printf 'hexmesh-cpu:build'; else printf 'docker-hexmesh'; fi
+}
+
 build_env_image() {
+  if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+    # Dockerfile.cpu compiles inside its build stage, so this also produces a
+    # ready-to-run image; the runtime target then strips it to binaries + libs.
+    echo "==> Building hexmesh-cpu:build (CPU-only build environment)"
+    "${docker_cmd[@]}" build -f Dockerfile.cpu --target build -t hexmesh-cpu:build .
+    echo "==> Building hexmesh-cpu:latest (slim CPU runtime)"
+    "${docker_cmd[@]}" build -f Dockerfile.cpu --target runtime -t hexmesh-cpu:latest .
+    return
+  fi
+
   echo "==> Building docker-hexmesh environment image"
   "${docker_cmd[@]}" build -t docker-hexmesh .
 }
 
 compile_in_docker() {
-  echo "==> Compiling evocube + hex inside docker-hexmesh"
-  "${docker_cmd[@]}" run --rm \
+  local image env_args=()
+  image="$(build_image_name)"
+  if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+    # compile.sh reads this to skip the LunarG SDK and pass -DHEX_ENABLE_CUDA=OFF.
+    env_args=(-e HEX_CPU_ONLY=1)
+  fi
+
+  echo "==> Compiling evocube + hex inside $image"
+  "${docker_cmd[@]}" run --rm "${env_args[@]}" \
     -v "$ROOT/lib:/space/lib" \
     -v "$ROOT/evocube:/space/evocube" \
     -v "$ROOT/interactive-hex-meshing:/space/interactive-hex-meshing" \
     -v "$ROOT/compile.sh:/space/compile.sh:ro" \
     -v "$ROOT/patches:/space/patches:ro" \
-    docker-hexmesh \
+    "$image" \
     bash /space/compile.sh
 }
 
 build_self_contained_image() {
+  # Dockerfile.cpu is already self-contained, and Dockerfile.build is the CUDA
+  # image — building it here would pull in the whole CUDA stack this variant
+  # exists to avoid.
+  if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+    [[ "$BUILD_SELF_CONTAINED" == "1" ]] \
+      && echo "==> Ignoring --self-contained: hexmesh-cpu:latest is already self-contained"
+    return 0
+  fi
   [[ "$BUILD_SELF_CONTAINED" == "1" ]] || return 0
   echo "==> Building self-contained hexmesh-cli:latest"
   "${docker_cmd[@]}" build -f Dockerfile.build --target build -t hexmesh-cli:latest .
@@ -291,17 +490,54 @@ ensure_nvidia_runtime() {
   exit 1
 }
 
+# Host-side unit test of the shared docker-argument helper. Cheap, needs no
+# image, and is the thing that keeps a stray --gpus out of a CPU launch.
+run_arg_checks() {
+  echo "==> Checking docker argument assembly (cli_run/lib/docker_args.sh)"
+  bash "$ROOT/scripts/test_docker_args.sh"
+}
+
 run_checks() {
+  # Source/patch inspection only, so it needs no GPU and no Vulkan — it just
+  # needs an image with bash + patch. Run it in whichever one this variant built.
+  local image ld_path
+  image="$(build_image_name)"
+  if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+    ld_path="/space/lib/libtorch/lib"
+  else
+    ld_path="/space/lib/libtorch/lib:/space/lib/vulkan-sdk/x86_64/lib:/space/lib/vulkan-sdk/x86_64/lib/VulkanLoader/lib"
+  fi
+
   echo "==> Running no-crash source/binary checks"
   "${docker_cmd[@]}" run --rm \
     -v "$ROOT:/space" \
     -w /space \
-    docker-hexmesh \
-    bash -lc 'export LD_LIBRARY_PATH="/space/lib/libtorch/lib:/space/lib/vulkan-sdk/x86_64/lib:/space/lib/vulkan-sdk/x86_64/lib/VulkanLoader/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; ./scripts/verify_no_crash_fixes.sh'
+    -e "HEXMESH_LD_PATH=$ld_path" \
+    "$image" \
+    bash -lc 'export LD_LIBRARY_PATH="${HEXMESH_LD_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; ./scripts/verify_no_crash_fixes.sh'
+}
+
+run_cpu_smoke() {
+  echo "==> Running headless CPU smoke test (no GPU, no --gpus, no NVIDIA ICD)"
+  # Deliberately minimal: the CPU runtime image is self-contained, so only
+  # output/ is mounted. Mounting lib/ or the source tree would shadow the
+  # image's +cpu LibTorch and its CUDA-free binary.
+  "${docker_cmd[@]}" run --rm \
+    -e HEX_LOCAL=1 \
+    -e SMOKE_DEVICE=cpu \
+    -v "$ROOT/output:/space/output" \
+    -w /space \
+    hexmesh-cpu:latest \
+    ./cli_run/smoke_test.sh
 }
 
 run_nvidia_smoke() {
   [[ "$RUN_SMOKE" == "1" ]] || { echo "==> Skipping smoke test"; return 0; }
+
+  if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+    run_cpu_smoke
+    return
+  fi
 
   ensure_nvidia_runtime
 
@@ -336,8 +572,14 @@ install_vulkan_sdk
 build_env_image
 compile_in_docker
 build_self_contained_image
+run_arg_checks
 run_checks
 run_nvidia_smoke
 install_host_vulkan_tools
 
-echo "OK: NVIDIA setup, compile, and verification complete."
+if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+  echo "OK: CPU-only setup, compile, and verification complete (no CUDA installed or linked)."
+  echo "    Run the pipeline with: HEX_IMAGE_VARIANT=cpu ./cli_run/run.sh <stage> <input> --headless --device cpu"
+else
+  echo "OK: NVIDIA setup, compile, and verification complete."
+fi

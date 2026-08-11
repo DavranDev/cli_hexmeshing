@@ -8,6 +8,19 @@ per-stage **runtime** `nvidia-smi` evidence on the RTX 4090 (§4). No "pending" 
 remain. The CPU-only cost (device knob + kernel ports) is scoped in
 [CPU_ONLY.md](CPU_ONLY.md).
 
+> **Update (2026-08-03): CUDA is no longer a compile-time dependency.** Everything
+> below describes what the code *uses* at runtime, and that is unchanged. What
+> changed is that all of it is now behind a build option: `-DHEX_ENABLE_CUDA=OFF`
+> (via `./setup.sh --cpu`) compiles the two `.cu` kernels out of the build
+> entirely, so the shipped image contains no CUDA toolkit, no CUDA headers and no
+> CUDA-linked object. Read the table below as "the CUDA surface that the option
+> switches off", not as "things you must install". See
+> [CPU_ONLY.md](CPU_ONLY.md) §6.
+>
+> Note that **Vulkan is not part of this**: it is a *renderer* dependency that
+> survives in the CPU-only build, satisfied in software by Mesa lavapipe.
+> Removing Vulkan from the build is a separate piece of work.
+
 ---
 
 ## 1. The two questions (keep them separate)

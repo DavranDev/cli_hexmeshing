@@ -27,6 +27,10 @@
 #   --headless          run with NO GUI window/surface at all (no X11 needed);
 #                       runs the stage and exits. Implies --exit-after.
 #   --device cpu|cuda   compute device for the pipeline math. Default is cuda
+#                       NOTE: this selects the DEVICE, not the build. A normal
+#                       CUDA-enabled build runs its own CPU path with this flag.
+#                       To launch the CUDA-free CPU-only *image* instead, set
+#                       HEX_IMAGE_VARIANT=cpu (see cli_run/CPU_ONLY.md).
 #                       (the NVIDIA GPU); cpu runs with no GPU but is much
 #                       slower (full chain ~6 min CPU vs ~12 s GPU). Pair
 #                       --device cpu with --headless to run on a box with no
@@ -47,6 +51,12 @@ print_usage() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
+
+# Variant-aware docker arguments (GPU + Vulkan). See the header of that file for
+# why HEX_IMAGE_VARIANT and --device are kept strictly separate.
+# shellcheck source=lib/docker_args.sh
+source "$SCRIPT_DIR/lib/docker_args.sh"
+HEX_VARIANT="$(hexmesh_variant)"
 
 # ---- 2. Parse arguments ----
 if [[ $# -lt 1 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
@@ -228,31 +238,48 @@ if [[ -n "${HEX_LOCAL:-}" ]]; then
   if [[ -n "${VULKAN_SDK:-}" ]]; then
     export VK_LAYER_PATH="${VULKAN_SDK}/share/vulkan/explicit_layer.d"
   fi
+  hexmesh_check_binary_variant /space/interactive-hex-meshing/bin/Release || exit 1
   ( cd /space/interactive-hex-meshing/bin/Release \
       && ./hex --script "$CONTAINER_CONFIG" $EXIT_AFTER $HEADLESS $DEVICE_FLAG ) 2>&1 | tee "$LOG_FILE"
   STATUS=${PIPESTATUS[0]}
 else
+  # GPU passthrough and Vulkan ICD selection come from the shared helper, so the
+  # CPU variant cannot acquire a stray --gpus / --runtime=nvidia / NVIDIA ICD.
+  hexmesh_runtime_docker_args
+
+  if [[ "$HEX_VARIANT" == cpu ]]; then
+    RUN_IMAGE="${HEX_RUN_IMAGE:-hexmesh-cpu:latest}"
+    # The CPU image is self-contained: its +cpu LibTorch, the hex binary and the
+    # assets are baked in. Mounting the host lib/ or interactive-hex-meshing/
+    # here would shadow them with whatever variant the host happens to hold —
+    # typically a CUDA LibTorch, which a CPU binary cannot load.
+    RUN_MOUNTS=(-v "$REPO_ROOT/output:/space/output")
+    RUN_PREFIX=""
+  else
+    RUN_IMAGE="${HEX_RUN_IMAGE:-docker-hexmesh}"
+    RUN_MOUNTS=(
+      -v "$REPO_ROOT/lib:/space/lib"
+      -v "$REPO_ROOT/evocube:/space/evocube"
+      -v "$REPO_ROOT/interactive-hex-meshing:/space/interactive-hex-meshing"
+      -v "$REPO_ROOT/compile.sh:/space/compile.sh"
+      -v "$REPO_ROOT/data:/space/data"
+      -v "$REPO_ROOT/output:/space/output"
+      -v "$REPO_ROOT/cli_run:/space/cli_run"
+    )
+    RUN_PREFIX="if [ -f /space/lib/vulkan-sdk/setup-env.sh ]; then source /space/lib/vulkan-sdk/setup-env.sh; elif [ -f /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh ]; then source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh; else echo 'ERROR: Vulkan SDK not found under /space/lib/vulkan-sdk' >&2; exit 1; fi && export VK_LAYER_PATH=\${VULKAN_SDK}/share/vulkan/explicit_layer.d && "
+  fi
+
+  # DISPLAY is guarded: a GPU-less CPU-only host commonly has none, and this
+  # script runs under `set -u`.
   docker run \
-    --runtime=nvidia \
-    --gpus all \
     --rm \
     --name "hexmesh-${RUN_ID}" \
-    --env="DISPLAY=$DISPLAY" \
-    --env="NVIDIA_DRIVER_CAPABILITIES=all" \
-    --env="VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json" \
+    "${HEXMESH_DOCKER_ARGS[@]}" \
+    --env="DISPLAY=${DISPLAY:-}" \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-    -v /usr/share/vulkan/icd.d:/usr/share/vulkan/icd.d:ro \
-    -v "$REPO_ROOT/lib:/space/lib" \
-    -v "$REPO_ROOT/evocube:/space/evocube" \
-    -v "$REPO_ROOT/interactive-hex-meshing:/space/interactive-hex-meshing" \
-    -v "$REPO_ROOT/compile.sh:/space/compile.sh" \
-    -v "$REPO_ROOT/data:/space/data" \
-    -v "$REPO_ROOT/output:/space/output" \
-    -v "$REPO_ROOT/cli_run:/space/cli_run" \
-    docker-hexmesh \
-    bash -c "if [ -f /space/lib/vulkan-sdk/setup-env.sh ]; then source /space/lib/vulkan-sdk/setup-env.sh; elif [ -f /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh ]; then source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh; else echo 'ERROR: Vulkan SDK not found under /space/lib/vulkan-sdk' >&2; exit 1; fi \
-             && export VK_LAYER_PATH=\${VULKAN_SDK}/share/vulkan/explicit_layer.d \
-             && cd /space/interactive-hex-meshing/bin/Release \
+    "${RUN_MOUNTS[@]}" \
+    "$RUN_IMAGE" \
+    bash -c "${RUN_PREFIX}cd /space/interactive-hex-meshing/bin/Release \
              && ./hex --script ${CONTAINER_CONFIG} ${EXIT_AFTER} ${HEADLESS} ${DEVICE_FLAG}" \
     2>&1 | tee "$LOG_FILE"
   STATUS=${PIPESTATUS[0]}

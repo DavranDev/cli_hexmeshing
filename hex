@@ -3,7 +3,19 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE="${HEX_IMAGE:-hexmesh-cli:latest}"
+
+# Variant-aware docker/Vulkan/LibTorch wiring lives in one place.
+# HEX_IMAGE_VARIANT=cpu selects the CUDA-free build; it is independent of the
+# `--device cpu|cuda` flag forwarded to the binary.
+# shellcheck source=cli_run/lib/docker_args.sh
+source "$ROOT/cli_run/lib/docker_args.sh"
+HEX_VARIANT="$(hexmesh_variant)"
+
+if [[ "$HEX_VARIANT" == cpu ]]; then
+  IMAGE="${HEX_IMAGE:-hexmesh-cpu:latest}"
+else
+  IMAGE="${HEX_IMAGE:-hexmesh-cli:latest}"
+fi
 
 BINARY="$ROOT/interactive-hex-meshing/bin/Release/hex"
 CALLER_PWD="$PWD"
@@ -23,10 +35,21 @@ done
 
 set +u
 # shellcheck disable=SC1091
-source "$ROOT/lib/vulkan-sdk-1.3.268.0/setup-env.sh"
+# A CPU-only install has no LunarG SDK at all — it uses the distro Vulkan loader
+# — so the missing-SDK hard error applies to the CUDA variant only.
+if [[ "$HEX_VARIANT" == cuda ]]; then
+  if [[ -f "$ROOT/lib/vulkan-sdk/setup-env.sh" ]]; then
+    source "$ROOT/lib/vulkan-sdk/setup-env.sh"
+  elif [[ -f "$ROOT/lib/vulkan-sdk-1.3.268.0/setup-env.sh" ]]; then
+    source "$ROOT/lib/vulkan-sdk-1.3.268.0/setup-env.sh"
+  else
+    echo "ERROR: Vulkan SDK not found under $ROOT/lib/vulkan-sdk" >&2
+    exit 1
+  fi
+fi
 set -u
-export LD_LIBRARY_PATH="$ROOT/lib/libtorch/lib:$VULKAN_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-if [[ -f /usr/share/vulkan/icd.d/nvidia_icd.json ]]; then
+export LD_LIBRARY_PATH="$(hexmesh_ld_library_path "$ROOT")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+if [[ "$HEX_VARIANT" == cuda && -f /usr/share/vulkan/icd.d/nvidia_icd.json ]]; then
   export VK_ICD_FILENAMES="${VK_ICD_FILENAMES:-/usr/share/vulkan/icd.d/nvidia_icd.json}"
 fi
 
@@ -35,13 +58,20 @@ fi
 if [[ "${HEX_DOCKER:-0}" != "1" ]] &&
    ! ldd "$BINARY" 2>/dev/null | grep 'not found' >/dev/null &&
    ! strings "$BINARY" | grep -F '/space/interactive-hex-meshing/vkoo/assets' >/dev/null; then
+  # Both variants build into bin/Release, so make sure this binary is the one
+  # the requested variant expects before running it.
+  hexmesh_check_binary_variant "$(dirname "$BINARY")" || exit 1
   cd "$(dirname "$BINARY")"
   exec ./hex "${args[@]}"
 fi
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "ERROR: Docker image '$IMAGE' is not available." >&2
-  echo "Build it with: docker build -f Dockerfile.build --target build -t hexmesh-cli:latest ." >&2
+  if [[ "$HEX_VARIANT" == cpu ]]; then
+    echo "Build it with: docker build -f Dockerfile.cpu --target runtime -t hexmesh-cpu:latest ." >&2
+  else
+    echo "Build it with: docker build -f Dockerfile.build --target build -t hexmesh-cli:latest ." >&2
+  fi
   exit 1
 fi
 
@@ -54,11 +84,12 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   esac
 done
 
+hexmesh_runtime_docker_args
 docker_args=(
-  run --rm --gpus all
+  run --rm
+  "${HEXMESH_DOCKER_ARGS[@]}"
   --user "$(id -u):$(id -g)"
   -e HOME=/tmp
-  -e NVIDIA_DRIVER_CAPABILITIES=all
   -v "$ROOT:$ROOT"
   -v "$ROOT/output:/space/output"
   -w /space/interactive-hex-meshing/bin/Release

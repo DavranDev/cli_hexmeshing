@@ -1,0 +1,754 @@
+{
+  "_about": "Baseline manifest for plans/cpu-only-build.md Verification F. Captured from the pre-change source tree (interactive-hex-meshing at HEAD) built with CUDA and run with --device cpu -- the same tensor backend and CPU kernels as the CPU-only build, so the comparison isolates the build change from CPU-vs-GPU float differences. Regenerate with scripts/collect_pipeline_artifacts.sh + 'scripts/compare_pipeline_artifacts.py manifest'. Large HDF5 artifacts are deliberately NOT committed; keep them as CI artifacts or release fixtures.",
+  "_hash_caveat": "Per-file sha256 values are informational only: this pipeline is not run-to-run deterministic, so they differ between identical runs. The gate is the field-by-field comparison plus the recorded tolerances, not the hashes.",
+  "result_mesh": {
+    "canonical_topology_sha256": "4ce1a2161416ac3038cbff4a9b1131d72e74e35c8b8fc919ab0282f4161b32cf",
+    "num_hexes": 18526,
+    "num_vertices": 16729
+  },
+  "result_metrics": {
+    "inverted_count": 0.0,
+    "jacobian": {
+      "max": 0.000144633668,
+      "mean": 6.75921183e-05,
+      "min": 7.42677639e-06,
+      "std": 2.21646114e-05
+    },
+    "scaled_jacobian": {
+      "max": 0.999803543,
+      "mean": 0.862410367,
+      "min": 0.0237780437,
+      "std": 0.167903438
+    },
+    "total_hexes": 18526.0
+  },
+  "run": "(pre-change CUDA build, --device cpu, spot.mesh, seed 42)",
+  "stages": {
+    "stage_0_deformation.hdf5": {
+      "bytes": 491632,
+      "datasets": {
+        "deformed_volume_mesh/tets": {
+          "dtype": ">i4",
+          "max": 3458,
+          "min": 0,
+          "shape": [
+            4,
+            12625
+          ]
+        },
+        "deformed_volume_mesh/vertices": {
+          "dtype": ">f4",
+          "max": 0.9805446863174438,
+          "mean": -0.015816377408856802,
+          "min": -0.9686063528060913,
+          "shape": [
+            3,
+            3459
+          ],
+          "std": 0.47472907138404624
+        },
+        "target_volume_mesh/tets": {
+          "dtype": ">i4",
+          "max": 3458,
+          "min": 0,
+          "shape": [
+            4,
+            12625
+          ]
+        },
+        "target_volume_mesh/vertices": {
+          "dtype": ">f4",
+          "max": 1.0,
+          "mean": -0.011820313961263726,
+          "min": -1.0,
+          "shape": [
+            3,
+            3459
+          ],
+          "std": 0.46868635179891877
+        }
+      },
+      "sha256": "ba9109275d16b9d6d1f64b4484a078181e6d4883b9bce68a336021199af6d144"
+    },
+    "stage_1_decomposition.hdf5": {
+      "bytes": 1038464,
+      "datasets": {
+        "deformed_volume_mesh/anchors": {
+          "dtype": ">f4",
+          "max": 1.2859301567077637,
+          "mean": -0.03333549960264709,
+          "min": -1.3584365844726562,
+          "shape": [
+            3,
+            33824
+          ],
+          "std": 0.5793142847527674
+        },
+        "deformed_volume_mesh/sdf": {
+          "dtype": ">f4",
+          "max": 1.2798694372177124,
+          "mean": 0.1588710230025598,
+          "min": -0.40724068880081177,
+          "shape": [
+            1,
+            33824
+          ],
+          "std": 0.26277443112617566
+        },
+        "deformed_volume_mesh/tets": {
+          "dtype": ">i4",
+          "max": 3458,
+          "min": 0,
+          "shape": [
+            4,
+            12625
+          ]
+        },
+        "deformed_volume_mesh/vertices": {
+          "dtype": ">f4",
+          "max": 0.9805446863174438,
+          "mean": -0.015816377408856802,
+          "min": -0.9686063528060913,
+          "shape": [
+            3,
+            3459
+          ],
+          "std": 0.47472907138404624
+        },
+        "polycube/params": {
+          "dtype": ">f4",
+          "max": 0.7781513929367065,
+          "mean": 0.11512259991529088,
+          "min": -0.6903923153877258,
+          "shape": [
+            6,
+            8
+          ],
+          "std": 0.3181983573979335
+        },
+        "polycube_info/locked": {
+          "dtype": ">i4",
+          "max": 0,
+          "min": 0,
+          "shape": [
+            8
+          ]
+        },
+        "polycube_info/names": {
+          "dtype": "uint8",
+          "max": 239,
+          "min": 0,
+          "shape": [
+            8,
+            32
+          ]
+        },
+        "polycube_info/ordering": {
+          "dtype": ">i4",
+          "max": 7,
+          "min": 0,
+          "shape": [
+            8
+          ]
+        },
+        "target_volume_mesh/tets": {
+          "dtype": ">i4",
+          "max": 3458,
+          "min": 0,
+          "shape": [
+            4,
+            12625
+          ]
+        },
+        "target_volume_mesh/vertices": {
+          "dtype": ">f4",
+          "max": 1.0,
+          "mean": -0.011820313961263726,
+          "min": -1.0,
+          "shape": [
+            3,
+            3459
+          ],
+          "std": 0.46868635179891877
+        }
+      },
+      "sha256": "45e1290e36dcf11d213abe4047f0ef90378f2f624e72fba62092056fbb9439e5"
+    },
+    "stage_2_discretization.hdf5": {
+      "bytes": 1985516,
+      "datasets": {
+        "deformed_volume_mesh/anchors": {
+          "dtype": ">f4",
+          "max": 1.2859301567077637,
+          "mean": -0.03333549960264709,
+          "min": -1.3584365844726562,
+          "shape": [
+            3,
+            33824
+          ],
+          "std": 0.5793142847527674
+        },
+        "deformed_volume_mesh/sdf": {
+          "dtype": ">f4",
+          "max": 1.2798694372177124,
+          "mean": 0.1588710230025598,
+          "min": -0.40724068880081177,
+          "shape": [
+            1,
+            33824
+          ],
+          "std": 0.26277443112617566
+        },
+        "deformed_volume_mesh/tets": {
+          "dtype": ">i4",
+          "max": 3458,
+          "min": 0,
+          "shape": [
+            4,
+            12625
+          ]
+        },
+        "deformed_volume_mesh/vertices": {
+          "dtype": ">f4",
+          "max": 0.9805446863174438,
+          "mean": -0.015816377408856802,
+          "min": -0.9686063528060913,
+          "shape": [
+            3,
+            3459
+          ],
+          "std": 0.47472907138404624
+        },
+        "polycube/params": {
+          "dtype": ">f4",
+          "max": 0.7781513929367065,
+          "mean": 0.11512259991529088,
+          "min": -0.6903923153877258,
+          "shape": [
+            6,
+            8
+          ],
+          "std": 0.3181983573979335
+        },
+        "polycube_complex/hexes": {
+          "dtype": ">i4",
+          "max": 16728,
+          "min": -1,
+          "shape": [
+            166734
+          ]
+        },
+        "polycube_complex/patches": {
+          "dtype": ">i4",
+          "max": 3791,
+          "min": -1,
+          "shape": [
+            3832
+          ]
+        },
+        "polycube_complex/quads": {
+          "dtype": ">i4",
+          "max": 12934,
+          "min": 0,
+          "shape": [
+            4,
+            3792
+          ]
+        },
+        "polycube_complex/vertices": {
+          "dtype": ">f4",
+          "max": 0.949999988079071,
+          "mean": -0.04159976338972617,
+          "min": -0.949999988079071,
+          "shape": [
+            3,
+            16729
+          ],
+          "std": 0.43850421306800785
+        },
+        "polycube_info/locked": {
+          "dtype": ">i4",
+          "max": 0,
+          "min": 0,
+          "shape": [
+            8
+          ]
+        },
+        "polycube_info/names": {
+          "dtype": "uint8",
+          "max": 252,
+          "min": 0,
+          "shape": [
+            8,
+            32
+          ]
+        },
+        "polycube_info/ordering": {
+          "dtype": ">i4",
+          "max": 7,
+          "min": 0,
+          "shape": [
+            8
+          ]
+        },
+        "target_volume_mesh/tets": {
+          "dtype": ">i4",
+          "max": 3458,
+          "min": 0,
+          "shape": [
+            4,
+            12625
+          ]
+        },
+        "target_volume_mesh/vertices": {
+          "dtype": ">f4",
+          "max": 1.0,
+          "mean": -0.011820313961263726,
+          "min": -1.0,
+          "shape": [
+            3,
+            3459
+          ],
+          "std": 0.46868635179891877
+        }
+      },
+      "sha256": "c6e78ffb5d01f9cf19aa255cf265cf6e6459ea98b5633a6a27557af73997f40c"
+    },
+    "stage_3_hexahedralization.hdf5": {
+      "bytes": 3800980,
+      "datasets": {
+        "deformed_volume_mesh/anchors": {
+          "dtype": ">f4",
+          "max": 1.2859301567077637,
+          "mean": -0.03333549960264709,
+          "min": -1.3584365844726562,
+          "shape": [
+            3,
+            33824
+          ],
+          "std": 0.5793142847527674
+        },
+        "deformed_volume_mesh/sdf": {
+          "dtype": ">f4",
+          "max": 1.2798694372177124,
+          "mean": 0.1588710230025598,
+          "min": -0.40724068880081177,
+          "shape": [
+            1,
+            33824
+          ],
+          "std": 0.26277443112617566
+        },
+        "deformed_volume_mesh/tets": {
+          "dtype": ">i4",
+          "max": 3458,
+          "min": 0,
+          "shape": [
+            4,
+            12625
+          ]
+        },
+        "deformed_volume_mesh/vertices": {
+          "dtype": ">f4",
+          "max": 0.9805446863174438,
+          "mean": -0.015816377408856802,
+          "min": -0.9686063528060913,
+          "shape": [
+            3,
+            3459
+          ],
+          "std": 0.47472907138404624
+        },
+        "polycube/params": {
+          "dtype": ">f4",
+          "max": 0.7781513929367065,
+          "mean": 0.11512259991529088,
+          "min": -0.6903923153877258,
+          "shape": [
+            6,
+            8
+          ],
+          "std": 0.3181983573979335
+        },
+        "polycube_complex/hexes": {
+          "dtype": ">i4",
+          "max": 16728,
+          "min": -1,
+          "shape": [
+            166734
+          ]
+        },
+        "polycube_complex/patches": {
+          "dtype": ">i4",
+          "max": 3791,
+          "min": -1,
+          "shape": [
+            3832
+          ]
+        },
+        "polycube_complex/quads": {
+          "dtype": ">i4",
+          "max": 12934,
+          "min": 0,
+          "shape": [
+            4,
+            3792
+          ]
+        },
+        "polycube_complex/vertices": {
+          "dtype": ">f4",
+          "max": 0.949999988079071,
+          "mean": -0.04159976338972617,
+          "min": -0.949999988079071,
+          "shape": [
+            3,
+            16729
+          ],
+          "std": 0.43850421306800785
+        },
+        "polycube_info/locked": {
+          "dtype": ">i4",
+          "max": 0,
+          "min": 0,
+          "shape": [
+            8
+          ]
+        },
+        "polycube_info/names": {
+          "dtype": "uint8",
+          "max": 252,
+          "min": 0,
+          "shape": [
+            8,
+            32
+          ]
+        },
+        "polycube_info/ordering": {
+          "dtype": ">i4",
+          "max": 7,
+          "min": 0,
+          "shape": [
+            8
+          ]
+        },
+        "result_mesh/hexes": {
+          "dtype": ">i4",
+          "max": 16728,
+          "min": -1,
+          "shape": [
+            166734
+          ]
+        },
+        "result_mesh/vertices": {
+          "dtype": ">f4",
+          "max": 0.9576475024223328,
+          "mean": -0.04809240908811296,
+          "min": -0.9990448951721191,
+          "shape": [
+            3,
+            16729
+          ],
+          "std": 0.4127744685081281
+        },
+        "target_complex/hexes": {
+          "dtype": ">i4",
+          "max": 16728,
+          "min": -1,
+          "shape": [
+            166734
+          ]
+        },
+        "target_complex/patches": {
+          "dtype": ">i4",
+          "max": 3791,
+          "min": -1,
+          "shape": [
+            3832
+          ]
+        },
+        "target_complex/quads": {
+          "dtype": ">i4",
+          "max": 12934,
+          "min": 0,
+          "shape": [
+            4,
+            3792
+          ]
+        },
+        "target_complex/vertices": {
+          "dtype": ">f4",
+          "max": 0.9576475024223328,
+          "mean": -0.04809240908811296,
+          "min": -0.9990448951721191,
+          "shape": [
+            3,
+            16729
+          ],
+          "std": 0.4127744685081281
+        },
+        "target_volume_mesh/tets": {
+          "dtype": ">i4",
+          "max": 3458,
+          "min": 0,
+          "shape": [
+            4,
+            12625
+          ]
+        },
+        "target_volume_mesh/vertices": {
+          "dtype": ">f4",
+          "max": 1.0,
+          "mean": -0.011820313961263726,
+          "min": -1.0,
+          "shape": [
+            3,
+            3459
+          ],
+          "std": 0.46868635179891877
+        }
+      },
+      "sha256": "2eac970a62dc74a33e986d534c92bb6881d9134a789a05101946a9ae5ad949dc"
+    }
+  },
+  "tolerances": {
+    "_comment": "Tolerances measured from two runs of the SAME build; each value is the observed run-to-run spread multiplied by the margin below. A field listed here is nondeterministic in this pipeline. Fields not listed must match exactly.",
+    "margin": 4.0,
+    "nondeterministic_exact": {
+      "stage_1_decomposition.hdf5:polycube_info/names": {
+        "differing_elements": 47,
+        "note": "integer/metadata field, unstable across runs of the same build",
+        "size": 256
+      },
+      "stage_2_discretization.hdf5:polycube_info/names": {
+        "differing_elements": 32,
+        "note": "integer/metadata field, unstable across runs of the same build",
+        "size": 256
+      },
+      "stage_3_hexahedralization.hdf5:polycube_info/names": {
+        "differing_elements": 32,
+        "note": "integer/metadata field, unstable across runs of the same build",
+        "size": 256
+      }
+    },
+    "run_a": "/p/base1",
+    "run_b": "/p/base2",
+    "tolerances": {
+      "result.mesh:points": {
+        "atol": 0.270032,
+        "count": 50187,
+        "observed_atol": 0.067508,
+        "observed_p50": 0.00013900000000000023,
+        "observed_p99": 0.00237900000000002,
+        "observed_rel": 1.9895652173913045,
+        "rtol": 7.958260869565218
+      },
+      "result_metrics.yaml:jacobian.max": {
+        "atol": 5.751615999999944e-06,
+        "count": 1,
+        "observed_atol": 1.437903999999986e-06,
+        "observed_p50": 1.437903999999986e-06,
+        "observed_p99": 1.437903999999986e-06,
+        "observed_rel": 0.009843831899063741,
+        "rtol": 0.039375327596254964
+      },
+      "result_metrics.yaml:jacobian.mean": {
+        "atol": 7.433120000001521e-08,
+        "count": 1,
+        "observed_atol": 1.8582800000003803e-08,
+        "observed_p50": 1.8582800000003803e-08,
+        "observed_p99": 1.8582800000003803e-08,
+        "observed_rel": 0.0002749255455721352,
+        "rtol": 0.0010997021822885407
+      },
+      "result_metrics.yaml:jacobian.min": {
+        "atol": 8.788627999999982e-08,
+        "count": 1,
+        "observed_atol": 2.1971569999999955e-08,
+        "observed_p50": 2.1971569999999955e-08,
+        "observed_p99": 2.1971569999999955e-08,
+        "observed_rel": 0.0029584262196966395,
+        "rtol": 0.011833704878786558
+      },
+      "result_metrics.yaml:jacobian.std": {
+        "atol": 6.065239999999939e-08,
+        "count": 1,
+        "observed_atol": 1.5163099999999848e-08,
+        "observed_p50": 1.5163099999999848e-08,
+        "observed_p99": 1.5163099999999848e-08,
+        "observed_rel": 0.0006841130541995357,
+        "rtol": 0.0027364522167981427
+      },
+      "result_metrics.yaml:scaled_jacobian.max": {
+        "atol": 9.131199999989903e-05,
+        "count": 1,
+        "observed_atol": 2.2827999999974757e-05,
+        "observed_p50": 2.2827999999974757e-05,
+        "observed_p99": 2.2827999999974757e-05,
+        "observed_rel": 2.2832485601598592e-05,
+        "rtol": 9.132994240639437e-05
+      },
+      "result_metrics.yaml:scaled_jacobian.mean": {
+        "atol": 0.0003657360000000054,
+        "count": 1,
+        "observed_atol": 9.143400000000135e-05,
+        "observed_p50": 9.143400000000135e-05,
+        "observed_p99": 9.143400000000135e-05,
+        "observed_rel": 0.00010602145277782978,
+        "rtol": 0.0004240858111113191
+      },
+      "result_metrics.yaml:scaled_jacobian.min": {
+        "atol": 0.002694770799999996,
+        "count": 1,
+        "observed_atol": 0.000673692699999999,
+        "observed_p50": 0.000673692699999999,
+        "observed_p99": 0.000673692699999999,
+        "observed_rel": 0.02755193696591621,
+        "rtol": 0.11020774786366484
+      },
+      "result_metrics.yaml:scaled_jacobian.std": {
+        "atol": 0.00114548400000003,
+        "count": 1,
+        "observed_atol": 0.0002863710000000075,
+        "observed_p50": 0.0002863710000000075,
+        "observed_p99": 0.0002863710000000075,
+        "observed_rel": 0.0017026655877824767,
+        "rtol": 0.006810662351129907
+      },
+      "stage_0_deformation.hdf5:deformed_volume_mesh/vertices": {
+        "atol": 0.001554727554321289,
+        "count": 10377,
+        "observed_atol": 0.00038868188858032227,
+        "observed_p50": 4.303455352783203e-05,
+        "observed_p99": 0.0001795923709869384,
+        "observed_rel": 1.5026238201233932,
+        "rtol": 6.010495280493573
+      },
+      "stage_1_decomposition.hdf5:deformed_volume_mesh/anchors": {
+        "atol": 0.001554727554321289,
+        "count": 101472,
+        "observed_atol": 0.00038868188858032227,
+        "observed_p50": 3.075599670410156e-05,
+        "observed_p99": 0.0001637829840183257,
+        "observed_rel": 1.3921715282971827,
+        "rtol": 5.568686113188731
+      },
+      "stage_1_decomposition.hdf5:deformed_volume_mesh/sdf": {
+        "atol": 0.0020380020141601562,
+        "count": 33824,
+        "observed_atol": 0.0005095005035400391,
+        "observed_p50": 4.9054622650146484e-05,
+        "observed_p99": 0.00023017331259325124,
+        "observed_rel": 1.9658303881052601,
+        "rtol": 7.8633215524210405
+      },
+      "stage_1_decomposition.hdf5:deformed_volume_mesh/vertices": {
+        "atol": 0.001554727554321289,
+        "count": 10377,
+        "observed_atol": 0.00038868188858032227,
+        "observed_p50": 4.303455352783203e-05,
+        "observed_p99": 0.0001795923709869384,
+        "observed_rel": 1.5026238201233932,
+        "rtol": 6.010495280493573
+      },
+      "stage_1_decomposition.hdf5:polycube/params": {
+        "atol": 0.026519298553466797,
+        "count": 48,
+        "observed_atol": 0.006629824638366699,
+        "observed_p50": 0.00012370944023132324,
+        "observed_p99": 0.00654597818851471,
+        "observed_rel": 0.23943434343434344,
+        "rtol": 0.9577373737373738
+      },
+      "stage_2_discretization.hdf5:deformed_volume_mesh/anchors": {
+        "atol": 0.001554727554321289,
+        "count": 101472,
+        "observed_atol": 0.00038868188858032227,
+        "observed_p50": 3.075599670410156e-05,
+        "observed_p99": 0.0001637829840183257,
+        "observed_rel": 1.3921715282971827,
+        "rtol": 5.568686113188731
+      },
+      "stage_2_discretization.hdf5:deformed_volume_mesh/sdf": {
+        "atol": 0.0020380020141601562,
+        "count": 33824,
+        "observed_atol": 0.0005095005035400391,
+        "observed_p50": 4.9054622650146484e-05,
+        "observed_p99": 0.00023017331259325124,
+        "observed_rel": 1.9658303881052601,
+        "rtol": 7.8633215524210405
+      },
+      "stage_2_discretization.hdf5:deformed_volume_mesh/vertices": {
+        "atol": 0.001554727554321289,
+        "count": 10377,
+        "observed_atol": 0.00038868188858032227,
+        "observed_p50": 4.303455352783203e-05,
+        "observed_p99": 0.0001795923709869384,
+        "observed_rel": 1.5026238201233932,
+        "rtol": 6.010495280493573
+      },
+      "stage_2_discretization.hdf5:polycube/params": {
+        "atol": 0.026519298553466797,
+        "count": 48,
+        "observed_atol": 0.006629824638366699,
+        "observed_p50": 0.00012370944023132324,
+        "observed_p99": 0.00654597818851471,
+        "observed_rel": 0.23943434343434344,
+        "rtol": 0.9577373737373738
+      },
+      "stage_3_hexahedralization.hdf5:deformed_volume_mesh/anchors": {
+        "atol": 0.001554727554321289,
+        "count": 101472,
+        "observed_atol": 0.00038868188858032227,
+        "observed_p50": 3.075599670410156e-05,
+        "observed_p99": 0.0001637829840183257,
+        "observed_rel": 1.3921715282971827,
+        "rtol": 5.568686113188731
+      },
+      "stage_3_hexahedralization.hdf5:deformed_volume_mesh/sdf": {
+        "atol": 0.0020380020141601562,
+        "count": 33824,
+        "observed_atol": 0.0005095005035400391,
+        "observed_p50": 4.9054622650146484e-05,
+        "observed_p99": 0.00023017331259325124,
+        "observed_rel": 1.9658303881052601,
+        "rtol": 7.8633215524210405
+      },
+      "stage_3_hexahedralization.hdf5:deformed_volume_mesh/vertices": {
+        "atol": 0.001554727554321289,
+        "count": 10377,
+        "observed_atol": 0.00038868188858032227,
+        "observed_p50": 4.303455352783203e-05,
+        "observed_p99": 0.0001795923709869384,
+        "observed_rel": 1.5026238201233932,
+        "rtol": 6.010495280493573
+      },
+      "stage_3_hexahedralization.hdf5:polycube/params": {
+        "atol": 0.026519298553466797,
+        "count": 48,
+        "observed_atol": 0.006629824638366699,
+        "observed_p50": 0.00012370944023132324,
+        "observed_p99": 0.00654597818851471,
+        "observed_rel": 0.23943434343434344,
+        "rtol": 0.9577373737373738
+      },
+      "stage_3_hexahedralization.hdf5:result_mesh/vertices": {
+        "atol": 0.27003196626901627,
+        "count": 50187,
+        "observed_atol": 0.06750799156725407,
+        "observed_p50": 0.00013887882232666016,
+        "observed_p99": 0.0023786790668964383,
+        "observed_rel": 1.988863129944486,
+        "rtol": 7.955452519777944
+      },
+      "stage_3_hexahedralization.hdf5:target_complex/vertices": {
+        "atol": 0.27003196626901627,
+        "count": 50187,
+        "observed_atol": 0.06750799156725407,
+        "observed_p50": 0.00013887882232666016,
+        "observed_p99": 0.0023786790668964383,
+        "observed_rel": 1.988863129944486,
+        "rtol": 7.955452519777944
+      }
+    }
+  }
+}

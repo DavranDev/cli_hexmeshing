@@ -114,6 +114,9 @@ ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib:$VULKAN_SDK/lib/VulkanLoader/lib:$VU
 # older system loader.  The current LunarG archive stores its layer manifests
 # under share/, not etc/.
 ENV VK_LAYER_PATH=$VULKAN_SDK/share/vulkan/explicit_layer.d
+# Declare the image variant for cli_run/lib/docker_args.sh. `cuda` is already the
+# default, but being explicit keeps this image symmetric with Dockerfile.cpu.
+ENV HEX_IMAGE_VARIANT=cuda
 
 # output/ is created at run time by the pipeline; ensure it exists if not mounted.
 RUN mkdir -p /space/output

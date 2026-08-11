@@ -360,8 +360,15 @@ scaled-Jacobian minimum 0.0245009158, wall time 10.24 seconds.
 
 ### 7.3 CPU-only + headless full pipeline
 
+There are two distinct CPU paths; §7.3a is the long-standing one, §7.3b removes
+the CUDA install requirement entirely. See
+[CPU_ONLY.md](CPU_ONLY.md) for the full comparison.
+
+#### 7.3a CPU *runtime* mode on a CUDA-enabled image
+
 `smoke_test.sh` can validate the CPU path by forwarding `SMOKE_DEVICE=cpu`.
-No GPU is passed to this container:
+No GPU is passed to this container — but the image itself is still the CUDA one,
+built against cu124 LibTorch with the CUDA toolkit installed:
 
 ```bash
 docker run --rm \
@@ -374,6 +381,47 @@ docker run --rm \
 
 Validated result on 2026-06-21 with no `--gpus` option: **PASS**, 18,526 hexes,
 0 inverted, scaled-Jacobian minimum 0.0246162266, wall time 5:54.98.
+
+#### 7.3b CPU-only *build* — no CUDA installed anywhere
+
+On a machine with no NVIDIA GPU, build the CUDA-free image instead. This skips
+the CUDA toolkit, the cu124 LibTorch, the NVIDIA Container Toolkit and the
+LunarG Vulkan SDK — none of them are downloaded or installed:
+
+```bash
+./setup.sh --cpu
+```
+
+Or build the images directly, without the host-side setup:
+
+```bash
+docker build -f Dockerfile.cpu --target build   -t hexmesh-cpu:build .
+docker build -f Dockerfile.cpu --target runtime -t hexmesh-cpu:latest .
+
+docker run --rm \
+  -e HEX_LOCAL=1 \
+  -e SMOKE_DEVICE=cpu \
+  -v "$PWD/output:/space/output" \
+  hexmesh-cpu:latest \
+  ./cli_run/smoke_test.sh
+```
+
+Note what is absent from that `docker run`: no `--gpus`, no `--runtime=nvidia`,
+no `NVIDIA_DRIVER_CAPABILITIES`, and no `/usr/share/vulkan/icd.d` bind-mount.
+The image points the Vulkan loader at its own lavapipe ICD internally. Only
+`output/` is mounted — the image is self-contained, and mounting the host `lib/`
+would shadow its `+cpu` LibTorch with whatever variant the host holds.
+
+Verify the claim rather than trusting it — no built object may link CUDA, and no
+CUDA package may be installed:
+
+```bash
+docker run --rm hexmesh-cpu:latest bash -c \
+  'dpkg-query -W 2>/dev/null | grep -Ei "cuda|nvidia|cudnn|nccl" && exit 1 || exit 0'
+docker run --rm hexmesh-cpu:latest vulkaninfo --summary | grep -E "deviceType|deviceName"
+```
+
+The second command must report `PHYSICAL_DEVICE_TYPE_CPU` / `llvmpipe`.
 
 ### 7.4 GPU + auto-closing GUI stage on native Ubuntu
 

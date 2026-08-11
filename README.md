@@ -53,6 +53,56 @@ run the headless NVIDIA smoke test:
 ```
 For a completely clean Docker-container run, use `./setup.sh --clean-containers`.
 
+#### Running without an NVIDIA GPU
+
+Two different things are both called "CPU", and picking the wrong one wastes a
+lot of disk and download time. Read this before choosing:
+
+| | What it is | What you still install |
+|---|---|---|
+| **CPU runtime mode**<br>`hex --device cpu` | A **CUDA-enabled binary** operating on CPU tensors. Long-standing, validated. | The whole CUDA stack: CUDA toolkit, cu124 LibTorch, NVIDIA Container Toolkit. You just never use the GPU. |
+| **CPU-only build**<br>`./setup.sh --cpu` | A binary that **links no CUDA at all** — no toolkit, no CUDA headers, no CUDA-linked shared objects anywhere in the image. | Nothing NVIDIA. No CUDA toolkit, no cu124 LibTorch, no Container Toolkit, no LunarG Vulkan SDK. |
+
+So: if the machine has a GPU and you merely want to run the math on the CPU, use
+`--device cpu`. If the machine has **no NVIDIA GPU at all**, use `./setup.sh --cpu`:
+
+```bash
+./setup.sh --cpu     # CPU-only build + Vulkan renderer (lavapipe), no GPU needed
+
+# then run the pipeline against the CPU image
+HEX_IMAGE_VARIANT=cpu ./cli_run/run.sh deform \
+    interactive-hex-meshing/assets/tutorial/spot.mesh --headless --device cpu
+```
+
+`HEX_IMAGE_VARIANT` selects the **image/build**; `--device` selects the **compute
+device**. They are independent — a CUDA-enabled image can legitimately run its
+CPU path, so CPU launch mode is never inferred from `--device cpu`.
+
+**Switching a machine between the two.** There is one active LibTorch at
+`lib/libtorch`; the other variant is parked beside it as `lib/libtorch-<variant>`
+and reused on the way back, so switching is a rename rather than a multi-GB
+re-download:
+
+```bash
+./setup.sh --cpu     # parks cu124, activates +cpu
+./setup.sh           # parks +cpu, activates cu124
+```
+
+This affects only the host-mounted developer workflow — the `hexmesh-cpu` image
+bakes its own `+cpu` LibTorch and never reads the host `lib/`.
+
+Vulkan is still required, because `hex` builds a Vulkan device even when
+headless. It is a *renderer* dependency, not a GPU one: the CPU image uses Mesa
+**lavapipe** (a software Vulkan ICD) from the distro packages rather than the
+~1.5 GB LunarG SDK.
+
+**amd64 only.** The lavapipe ICD manifest path baked into the CPU image
+(`lvp_icd.x86_64.json`) is architecture-specific; ARM64 is unsupported rather
+than silently broken.
+
+Details, per-stage timings and the verification commands are in
+[cli_run/CPU_ONLY.md](cli_run/CPU_ONLY.md).
+
 ### 2 Enter the Docker container
 
 A detailed document of the code structure and parameters can be found in the [Document](DOCUMENT.md).

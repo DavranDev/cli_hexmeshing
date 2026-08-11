@@ -11,7 +11,16 @@ github_token.txt
 .claude/
 .codex
 
+# Local-only presentation notes; kept out of the repo deliberately, not stale.
+cli_run/CPU_ONLY_SLIDES.md
+
+# Downloaded dependency trees (libtorch, vulkan-sdk) at the repo root.
 lib/
+# ...but cli_run/lib/ is source, not a download: the runner scripts source
+# docker_args.sh from it, so a fresh clone without it breaks setup.sh, run.sh,
+# ./hex and run_docker.sh.
+!cli_run/lib/
+!cli_run/lib/**
 1.4.341.1/
 
 # Generated pipeline run outputs (the whole output/ tree is created at runtime

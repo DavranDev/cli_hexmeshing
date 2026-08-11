@@ -1,6 +1,7 @@
 [submodule "evocube"]
 	path = evocube
-	url = https://github.com/xmlyqing00/evocube.git
+	url = https://github.com/DavranDev/evocube.git
+	branch = cli-runner
 [submodule "interactive-hex-meshing"]
 	path = interactive-hex-meshing
 	url = https://github.com/DavranDev/interactive-hex-meshing.git

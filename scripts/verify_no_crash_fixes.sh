@@ -148,8 +148,33 @@ if [[ -x "$HEX" && -d "$TORCH_LIB" ]]; then
   set -e
   [[ $hex_status -eq 0 ]] || { echo "$hex_help"; fail "hex --help failed"; }
   grep -q -- "--headless" <<<"$hex_help" || fail "hex --help does not list --headless"
-  grep -q -- "--device cpu|cuda" <<<"$hex_help" || fail "hex --help does not list --device cpu|cuda"
-  pass "hex advertises headless and device modes"
+
+  # The advertised device list depends on the BUILD variant, so this cannot
+  # assert the CUDA-build wording unconditionally: a -DHEX_ENABLE_CUDA=OFF build
+  # correctly offers only `--device cpu`. Check against what the binary actually
+  # is, taken from the marker compile.sh writes next to it.
+  hex_variant="$(sed -n 's/^variant=//p' "$ROOT/interactive-hex-meshing/bin/Release/.hexmesh-variant" 2>/dev/null | head -n 1)"
+  if [[ -z "$hex_variant" ]]; then
+    # No marker (a binary predating it): infer from the help text itself, and
+    # require the CUDA wording only if it claims cuda.
+    if grep -q -- "--device cpu|cuda" <<<"$hex_help"; then hex_variant=cuda; else hex_variant=cpu; fi
+    echo "NOTE: no bin/Release/.hexmesh-variant marker; inferred '$hex_variant' from --help"
+  fi
+
+  grep -q -- "--device cpu" <<<"$hex_help" || fail "hex --help does not list --device cpu"
+  if [[ "$hex_variant" == cuda ]]; then
+    grep -q -- "--device cpu|cuda" <<<"$hex_help" \
+      || fail "CUDA-enabled hex --help does not list --device cpu|cuda"
+  else
+    # `if !` rather than `grep && fail`: the no-match case returns 1, which
+    # under this script's `set -e` would abort instead of passing.
+    if grep -q -- "--device cpu|cuda" <<<"$hex_help"; then
+      fail "CPU-only hex --help advertises cuda, which this build cannot do"
+    fi
+    grep -qi "built without CUDA" <<<"$hex_help" \
+      || fail "CPU-only hex --help does not state that the build has no CUDA"
+  fi
+  pass "hex advertises headless and device modes ($hex_variant build)"
 else
   echo "SKIP: hex binary or LibTorch runtime is not available"
 fi

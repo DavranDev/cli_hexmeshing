@@ -21,7 +21,7 @@ There are two paths:
 | CUDA | 12.4 (host NVIDIA driver must be ≥ this) |
 | LibTorch | 2.6.0+cu124 (`download.pytorch.org`) |
 | Vulkan SDK | Current official LunarG Linux SDK, normalized to `lib/vulkan-sdk` |
-| evocube submodule | `github.com/xmlyqing00/evocube` |
+| evocube submodule | `github.com/DavranDev/evocube`, branch `cli-runner` (fork of `xmlyqing00/evocube`) |
 | CDM submodule | `github.com/DavranDev/interactive-hex-meshing`, branch `cli-runner` |
 
 The big libraries (LibTorch, Vulkan SDK) are **not** in git — `setup.sh`
