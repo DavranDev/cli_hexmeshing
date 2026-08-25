@@ -10,12 +10,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=cli_run/lib/docker_args.sh
 source "$ROOT/cli_run/lib/docker_args.sh"
 HEX_VARIANT="$(hexmesh_variant)"
+HEX_RENDERER_SEL="$(hexmesh_renderer)"
 
-if [[ "$HEX_VARIANT" == cpu ]]; then
-  IMAGE="${HEX_IMAGE:-hexmesh-cpu:latest}"
-else
-  IMAGE="${HEX_IMAGE:-hexmesh-cli:latest}"
-fi
+IMAGE="${HEX_IMAGE:-$(hexmesh_image cli)}"
 
 BINARY="$ROOT/interactive-hex-meshing/bin/Release/hex"
 CALLER_PWD="$PWD"
@@ -37,7 +34,9 @@ set +u
 # shellcheck disable=SC1091
 # A CPU-only install has no LunarG SDK at all — it uses the distro Vulkan loader
 # — so the missing-SDK hard error applies to the CUDA variant only.
-if [[ "$HEX_VARIANT" == cuda ]]; then
+# A renderer-free build links no Vulkan at all, so the missing-SDK hard error
+# must not fire for it either -- same reasoning as the CPU variant below.
+if [[ "$HEX_VARIANT" == cuda && "$HEX_RENDERER_SEL" == vulkan ]]; then
   if [[ -f "$ROOT/lib/vulkan-sdk/setup-env.sh" ]]; then
     source "$ROOT/lib/vulkan-sdk/setup-env.sh"
   elif [[ -f "$ROOT/lib/vulkan-sdk-1.3.268.0/setup-env.sh" ]]; then
@@ -49,7 +48,8 @@ if [[ "$HEX_VARIANT" == cuda ]]; then
 fi
 set -u
 export LD_LIBRARY_PATH="$(hexmesh_ld_library_path "$ROOT")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-if [[ "$HEX_VARIANT" == cuda && -f /usr/share/vulkan/icd.d/nvidia_icd.json ]]; then
+if [[ "$HEX_VARIANT" == cuda && "$HEX_RENDERER_SEL" == vulkan \
+      && -f /usr/share/vulkan/icd.d/nvidia_icd.json ]]; then
   export VK_ICD_FILENAMES="${VK_ICD_FILENAMES:-/usr/share/vulkan/icd.d/nvidia_icd.json}"
 fi
 
@@ -67,18 +67,29 @@ fi
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "ERROR: Docker image '$IMAGE' is not available." >&2
-  if [[ "$HEX_VARIANT" == cpu ]]; then
+  if [[ "$HEX_VARIANT:$HEX_RENDERER_SEL" == cpu:vulkan ]]; then
     echo "Build it with: docker build -f Dockerfile.cpu --target runtime -t hexmesh-cpu:latest ." >&2
+  elif [[ "$HEX_VARIANT:$HEX_RENDERER_SEL" == cpu:none ]]; then
+    echo "Build it with: docker build -f Dockerfile.novk --target runtime -t hexmesh-novk:latest ." >&2
+  elif [[ "$HEX_VARIANT:$HEX_RENDERER_SEL" == cuda:none ]]; then
+    echo "Build it with: docker build -f Dockerfile.cuda-novk --target runtime -t hexmesh-cuda-novk:latest ." >&2
   else
     echo "Build it with: docker build -f Dockerfile.build --target build -t hexmesh-cli:latest ." >&2
   fi
   exit 1
 fi
 
-needs_display=1
+# --no-vulkan implies --headless inside the binary, so it must imply "no display
+# needed" here too; otherwise this wrapper demands an X11 DISPLAY for a run that
+# never opens a window.
+if [[ "$HEX_RENDERER_SEL" == none ]]; then
+  needs_display=0
+else
+  needs_display=1
+fi
 for ((i = 0; i < ${#args[@]}; i++)); do
   case "${args[$i]}" in
-    --headless|-h|--help)
+    --headless|--no-vulkan|-h|--help)
       needs_display=0
       ;;
   esac

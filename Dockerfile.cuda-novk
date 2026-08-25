@@ -1,0 +1,70 @@
+# CUDA compute + renderer-free hex image. Phase B / LEVEL 3.
+# Neither the build nor runtime stage installs or copies Vulkan.
+
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS libs
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates wget unzip \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /space/lib
+ARG LIBTORCH_URL=https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip
+RUN wget -O /tmp/libtorch.zip "$LIBTORCH_URL" \
+ && unzip -q /tmp/libtorch.zip -d /space/lib \
+ && rm /tmp/libtorch.zip \
+ && test -d /space/lib/libtorch \
+ && printf 'variant=cuda\nversion=2.6.0\nabi=cxx11\n' \
+      > /space/lib/libtorch/.hexmesh-variant
+
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS build
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /space
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      git cmake build-essential patch python3 python3-pip \
+      libblas-dev liblapack-dev libgl1-mesa-dev \
+      libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+      libhdf5-dev \
+ && rm -rf /var/lib/apt/lists/*
+RUN if dpkg-query -W 2>/dev/null | grep -Eiq 'vulkan'; then \
+      echo 'ERROR: Vulkan package in CUDA/no-Vulkan build stage' >&2; exit 1; \
+    fi
+COPY --from=libs /space/lib /space/lib
+COPY evocube/ /space/evocube/
+COPY interactive-hex-meshing/ /space/interactive-hex-meshing/
+COPY compile.sh /space/compile.sh
+COPY cli_run/ /space/cli_run/
+COPY patches/ /space/patches/
+ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib
+ENV HEX_NO_VULKAN=1
+RUN bash /space/compile.sh \
+ && test -x /space/evocube/build/polycube_withHexEx \
+ && test -x /space/interactive-hex-meshing/bin/Release/hex
+RUN test "$(sed -n 's/^variant=//p' /space/interactive-hex-meshing/bin/Release/.hexmesh-variant)" = cuda \
+ && test "$(sed -n 's/^renderer=//p' /space/interactive-hex-meshing/bin/Release/.hexmesh-variant)" = none \
+ && ! ldd /space/interactive-hex-meshing/bin/Release/hex \
+      | grep -Eiq 'vulkan|glfw|GL\.so|X11|xcb|wayland|imgui|glslang|spirv'
+
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /space
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libblas3 liblapack3 libgomp1 libhdf5-103 libhdf5-cpp-103 \
+      libgl1 libglu1-mesa libxrandr2 libxinerama1 libxcursor1 libxi6 file \
+ && rm -rf /var/lib/apt/lists/* \
+ && if dpkg-query -W 2>/dev/null | grep -Eiq 'vulkan'; then \
+      echo 'ERROR: Vulkan package in CUDA/no-Vulkan runtime' >&2; exit 1; \
+    fi
+COPY --from=build /space/lib/libtorch/lib /space/lib/libtorch/lib
+COPY --from=build /space/lib/libtorch/.hexmesh-variant /space/lib/libtorch/.hexmesh-variant
+COPY --from=build /space/interactive-hex-meshing/bin /space/interactive-hex-meshing/bin
+COPY --from=build /space/interactive-hex-meshing/assets /space/interactive-hex-meshing/assets
+COPY --from=build /space/evocube/build /space/evocube/build
+COPY --from=build /space/cli_run /space/cli_run
+ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib
+ENV HEX_IMAGE_VARIANT=cuda
+ENV HEX_RENDERER=none
+RUN mkdir -p /space/output \
+ && ! ldd /space/interactive-hex-meshing/bin/Release/hex \
+      | grep -Eiq 'vulkan|glfw|GL\.so|X11|xcb|wayland|imgui|glslang|spirv'
+CMD ["/bin/bash"]

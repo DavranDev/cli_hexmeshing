@@ -45,6 +45,8 @@ install_docker.sh
 setup.sh
 Dockerfile.build
 Dockerfile.cpu
+Dockerfile.novk
+Dockerfile.cuda-novk
 .dockerignore
 
 # --- Archives: Dockerfile.build downloads these; never ship local copies ---

@@ -1,0 +1,177 @@
+# Dockerfile.novk — renderer-free build & runtime images. No Vulkan anywhere.
+# ============================================================================
+# Phase B of plans/no-vulkan-headless.md. Mirrors Dockerfile.cpu's
+# libs -> build -> runtime stage structure and its /space layout, so compile.sh,
+# cli_run/run.sh and the rendered /space/output/... paths work unchanged.
+#
+# The difference from Dockerfile.cpu is the entire point of this file:
+#
+#   * NO libvulkan-dev, NO libvulkan1, NO mesa-vulkan-drivers, NO vulkan-tools,
+#     NO LunarG SDK, NO VK_ICD_FILENAMES. Not "present but unused" -- absent.
+#   * hex is compiled with HEX_ENABLE_VULKAN=OFF (compile.sh reads
+#     HEX_NO_VULKAN), so vkoo compiles only the scene graph and the binary
+#     links no Vulkan, imgui, glfw, glslang, SPIRV or spirv-cross.
+#   * GL/X11 packages DO remain, and only for evocube: libigl's CMake does an
+#     unconditional find_package(OpenGL). hex links neither, and the build stage
+#     asserts that on the artifact.
+#
+# This is the LEVEL 3 image: where Dockerfile.cpu still needs a Vulkan loader
+# and an ICD at run time, this one needs neither, because the binary contains
+# no Vulkan call sites to reach them.
+#
+# CUDA is orthogonal. This file is the CPU x no-Vulkan corner of the matrix;
+# HEX_CPU_ONLY is set below. For CUDA x no-Vulkan, build from Dockerfile.build
+# with HEX_NO_VULKAN=1 instead.
+#
+# amd64 only, matching Dockerfile.cpu.
+#
+# Build:
+#   docker build -f Dockerfile.novk --target build   -t hexmesh-novk:build .
+#   docker build -f Dockerfile.novk --target runtime -t hexmesh-novk:latest .
+# Run the headless smoke test (no --gpus, no ICD, no loader):
+#   docker run --rm -e HEX_LOCAL=1 -e SMOKE_DEVICE=cpu \
+#     -v "$(pwd)/output:/space/output" hexmesh-novk:latest ./cli_run/smoke_test.sh
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1 (libs): unpack the +cpu LibTorch archive once, exactly as
+# Dockerfile.cpu does. Discarded, so the archive never lands in a shipped layer.
+# ---------------------------------------------------------------------------
+FROM ubuntu:22.04 AS libs
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates wget unzip \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /space/lib
+
+ARG LIBTORCH_VERSION=2.6.0
+ARG LIBTORCH_VARIANT=cpu
+ARG LIBTORCH_ABI=cxx11
+ARG LIBTORCH_URL=https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcpu.zip
+
+RUN set -eux; \
+    wget -O /tmp/libtorch.zip "$LIBTORCH_URL"; \
+    unzip -q /tmp/libtorch.zip -d /space/lib; \
+    rm /tmp/libtorch.zip; \
+    test -d /space/lib/libtorch; \
+    grep -q "^${LIBTORCH_VERSION}+${LIBTORCH_VARIANT}$" /space/lib/libtorch/build-version; \
+    if ls /space/lib/libtorch/lib | grep -Eiq 'cuda|cudnn|nvrtc|nccl'; then \
+      echo "ERROR: LibTorch archive at $LIBTORCH_URL contains CUDA libraries" >&2; \
+      exit 1; \
+    fi; \
+    printf 'variant=%s\nversion=%s\nabi=%s\n' \
+      "$LIBTORCH_VARIANT" "$LIBTORCH_VERSION" "$LIBTORCH_ABI" \
+      > /space/lib/libtorch/.hexmesh-variant
+
+# ---------------------------------------------------------------------------
+# Stage 2 (build): compiler + dev packages, then compile evocube + hex.
+# ---------------------------------------------------------------------------
+FROM ubuntu:22.04 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /space
+
+# Dockerfile.cpu's build packages MINUS every Vulkan one: no libvulkan-dev, no
+# mesa-vulkan-drivers, no vulkan-tools.
+#
+# OpenGL and X11 stay, and they are NOT for hex. evocube links libigl, whose
+# CMake does find_package(OpenGL) unconditionally; evocube is a separate binary
+# and changing it is an explicit non-goal of plans/no-vulkan-headless.md. hex
+# itself links neither -- the RUN below enforces that on the artifact, which is
+# the check that actually matters.
+# libhdf5-serial-dev is a transitional package for libhdf5-dev on 22.04.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      git cmake build-essential patch python3 python3-pip \
+      libblas-dev liblapack-dev libgl1-mesa-dev \
+      libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+      libhdf5-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=libs /space/lib /space/lib
+
+ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib
+
+# Prove the premise before compiling against it: there is no Vulkan here.
+RUN if dpkg-query -W 2>/dev/null | grep -Ei 'vulkan'; then \
+      echo "ERROR: a Vulkan package is installed in the no-Vulkan build stage" >&2; exit 1; \
+    fi; \
+    echo "OK: no Vulkan package in the build stage"
+
+COPY evocube/                  /space/evocube/
+COPY interactive-hex-meshing/  /space/interactive-hex-meshing/
+COPY compile.sh                /space/compile.sh
+COPY cli_run/                  /space/cli_run/
+COPY patches/                  /space/patches/
+
+# compile.sh reads both: skip the LunarG SDK and pass -DHEX_ENABLE_CUDA=OFF /
+# -DHEX_ENABLE_VULKAN=OFF.
+ENV HEX_CPU_ONLY=1
+ENV HEX_NO_VULKAN=1
+
+RUN bash /space/compile.sh \
+ && test -x /space/evocube/build/polycube_withHexEx \
+ && test -x /space/interactive-hex-meshing/bin/Release/hex \
+ && echo "OK: evocube + hex binaries built (CPU-only, renderer-free)"
+
+# Verification I, enforced at build time rather than left to a test run: the
+# binary must link neither CUDA nor any renderer library.
+RUN if ldd /space/interactive-hex-meshing/bin/Release/hex \
+      | grep -Eiq 'cuda|nvidia|cudnn|nvrtc|cupti|cusolver'; then \
+      echo "ERROR: CPU-only build linked a CUDA library" >&2; exit 1; \
+    fi; \
+    if ldd /space/interactive-hex-meshing/bin/Release/hex \
+      | grep -Eiq 'vulkan|glfw|GL\.so|X11|xcb|wayland'; then \
+      echo "ERROR: renderer-free build linked a renderer library" >&2; exit 1; \
+    fi; \
+    echo "OK: hex links neither CUDA nor any renderer library"
+
+ENV HEX_IMAGE_VARIANT=cpu
+ENV HEX_RENDERER=none
+
+RUN mkdir -p /space/output
+
+CMD ["/bin/bash"]
+
+# ---------------------------------------------------------------------------
+# Stage 3 (runtime): SLIM image. Binaries + their shared libs + assets and the
+# CLI scripts. No compilers, no source, no build trees, and -- the point --
+# no Vulkan loader, no ICD, no graphics packages of any kind.
+# ---------------------------------------------------------------------------
+FROM ubuntu:22.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /space
+
+# Dockerfile.cpu's runtime packages MINUS libvulkan1, mesa-vulkan-drivers and
+# vulkan-tools. The GL/X11 runtime libraries stay for the shipped evocube
+# binaries only (see the build stage). `file` stays for Verification E, which
+# walks every shipped ELF.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libblas3 liblapack3 libgomp1 libhdf5-103 libhdf5-cpp-103 \
+      libgl1 libglu1-mesa \
+      libxrandr2 libxinerama1 libxcursor1 libxi6 \
+      file \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /space/lib/libtorch/lib               /space/lib/libtorch/lib
+COPY --from=build /space/lib/libtorch/.hexmesh-variant  /space/lib/libtorch/.hexmesh-variant
+
+COPY --from=build /space/interactive-hex-meshing/bin    /space/interactive-hex-meshing/bin
+COPY --from=build /space/interactive-hex-meshing/assets /space/interactive-hex-meshing/assets
+COPY --from=build /space/evocube/build                  /space/evocube/build
+COPY --from=build /space/cli_run                        /space/cli_run
+
+# No vkoo/shaders: nothing in this image can compile or bind a shader.
+
+ENV LD_LIBRARY_PATH=/space/lib/libtorch/lib
+ENV HEX_IMAGE_VARIANT=cpu
+ENV HEX_RENDERER=none
+
+RUN mkdir -p /space/output
+
+CMD ["/bin/bash"]

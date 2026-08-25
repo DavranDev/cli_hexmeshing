@@ -83,7 +83,22 @@ export Torch_DIR='/space/lib/libtorch/share/cmake/Torch/'
 # can also use.
 HEX_CPU_ONLY="${HEX_CPU_ONLY:-0}"
 
+# Renderer-free build: -DHEX_ENABLE_VULKAN=OFF. Orthogonal to HEX_CPU_ONLY, so
+# the two together give the four-variant matrix. Set by Dockerfile.novk and by
+# `setup.sh --no-vulkan`. Unrelated to `hex --no-vulkan`, which is the runtime
+# flag a Vulkan-enabled binary also honours.
+HEX_NO_VULKAN="${HEX_NO_VULKAN:-0}"
+
 source_vulkan_sdk() {
+  # Nothing in this build includes a Vulkan header or links the loader, so the
+  # SDK is not merely optional here -- it is irrelevant. Same shape as the
+  # HEX_CPU_ONLY early return below.
+  if [[ "$HEX_NO_VULKAN" == 1 ]]; then
+    echo "OK: HEX_NO_VULKAN=1 — no Vulkan headers or loader are needed."
+    unset VULKAN_SDK VULKAN_SDK_ROOT VK_LAYER_PATH VK_ADD_LAYER_PATH VK_ICD_FILENAMES
+    return 0
+  fi
+
   # A CPU-only build takes Vulkan from the distro (libvulkan-dev), which is
   # already on the default include/library paths. There is no setup-env.sh to
   # source, and the hard error below would abort the CPU image build.
@@ -143,11 +158,11 @@ apply_hex_validation_layer_fix
 # CMake cache from the other variant (CUDA paths, CUDA-enabled Torch), and
 # selectively deleting cache entries to recover is exactly the fragile pattern
 # the Vulkan_INCLUDE_DIR repair below already demonstrates.
-if [[ "$HEX_CPU_ONLY" == 1 ]]; then
-  hex_build_dir="build/cpu-release"
-else
-  hex_build_dir="build/cuda-release"
-fi
+# Four variants, four directories: the cache holds CUDA paths, Torch variant and
+# now the renderer's find_package(Vulkan) result, none of which survive a switch.
+hex_build_dir="build/$([[ "$HEX_CPU_ONLY" == 1 ]] && echo cpu || echo cuda)"
+hex_build_dir+="$([[ "$HEX_NO_VULKAN" == 1 ]] && echo -novk)"
+hex_build_dir+="-release"
 echo "==> hex build directory: $hex_build_dir"
 mkdir -p "$hex_build_dir"
 cd "$hex_build_dir" || exit 1
@@ -210,6 +225,11 @@ if [[ "$HEX_CPU_ONLY" == 1 ]]; then
 else
   hex_cmake_args+=(-DHEX_ENABLE_CUDA=ON)
 fi
+if [[ "$HEX_NO_VULKAN" == 1 ]]; then
+  hex_cmake_args+=(-DHEX_ENABLE_VULKAN=OFF)
+else
+  hex_cmake_args+=(-DHEX_ENABLE_VULKAN=ON)
+fi
 
 cmake ../.. "${hex_cmake_args[@]}" \
   || { echo "ERROR: hex cmake configure failed" >&2; exit 1; }
@@ -226,6 +246,11 @@ if [[ "$HEX_CPU_ONLY" == 1 ]]; then
   hex_built_variant=cpu
 else
   hex_built_variant=cuda
+fi
+if [[ "$HEX_NO_VULKAN" == 1 ]]; then
+  hex_built_renderer=none
+else
+  hex_built_renderer=vulkan
 fi
 
 # Verify the ARTIFACT before labelling it. Writing the marker straight from
@@ -248,9 +273,23 @@ else
   fi
 fi
 
-printf 'variant=%s\n' "$hex_built_variant" \
+# Same artifact-first rule for the renderer: ask the binary, do not trust the
+# request. A renderer-free hex says so in --help.
+if [[ "$hex_built_renderer" == none ]]; then
+  grep -q -- "built without the renderer" <<<"$hex_help_out" \
+    || { echo "ERROR: a renderer-free build was requested but the binary does not advertise it." >&2
+         echo "ERROR: bin/Release/hex does not match this build; refusing to label it." >&2; exit 1; }
+else
+  if grep -q -- "built without the renderer" <<<"$hex_help_out"; then
+    echo "ERROR: a Vulkan build was requested but the binary advertises no renderer." >&2
+    echo "ERROR: bin/Release/hex does not match this build; refusing to label it." >&2
+    exit 1
+  fi
+fi
+
+printf 'variant=%s\nrenderer=%s\n' "$hex_built_variant" "$hex_built_renderer" \
   > /space/interactive-hex-meshing/bin/Release/.hexmesh-variant
-echo "OK: hex binary variant = $hex_built_variant (verified against the binary)"
+echo "OK: hex binary variant = $hex_built_variant, renderer = $hex_built_renderer (verified against the binary)"
 
 cd /space
 echo "OK: evocube + hex built successfully."

@@ -6,7 +6,8 @@
 # Usage:
 #   ./cli_run/run.sh <subcommand> <input.mesh|input.hdf5> [config.yaml] [options]
 #
-#   [options]:  [--exit-after | --headless]   display mode (default: GUI stays open)
+#   [options]:  [--exit-after | --headless | --no-vulkan]
+#                                             display mode (default: GUI stays open)
 #               [--device cpu|cuda]           compute device (default: cuda / GPU)
 #
 # Subcommands:
@@ -26,6 +27,11 @@
 #   --exit-after        close the GUI window when the script finishes
 #   --headless          run with NO GUI window/surface at all (no X11 needed);
 #                       runs the stage and exits. Implies --exit-after.
+#   --no-vulkan         make no Vulkan API call at all: no instance, device or
+#                       view is created, so no Vulkan ICD and no graphics
+#                       driver are needed. Implies --headless. The binary still
+#                       links the Vulkan loader -- this is the runtime flag
+#                       (Phase A), not a Vulkan-free build.
 #   --device cpu|cuda   compute device for the pipeline math. Default is cuda
 #                       NOTE: this selects the DEVICE, not the build. A normal
 #                       CUDA-enabled build runs its own CPU path with this flag.
@@ -57,6 +63,7 @@ cd "$REPO_ROOT"
 # shellcheck source=lib/docker_args.sh
 source "$SCRIPT_DIR/lib/docker_args.sh"
 HEX_VARIANT="$(hexmesh_variant)"
+HEX_RENDERER_SEL="$(hexmesh_renderer)"
 
 # ---- 2. Parse arguments ----
 if [[ $# -lt 1 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
@@ -75,11 +82,13 @@ INPUT_HOST="$1"; shift
 USER_CONFIG=""
 EXIT_AFTER=""
 HEADLESS=""
+NO_VULKAN=""
 DEVICE_FLAG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --exit-after) EXIT_AFTER="--exit-after"; shift ;;
     --headless)   HEADLESS="--headless"; shift ;;
+    --no-vulkan)  NO_VULKAN="--no-vulkan"; shift ;;
     --device)     DEVICE_FLAG="--device ${2:?--device needs cpu|cuda}"; shift 2 ;;
     -h|--help)    print_usage; exit 0 ;;
     *)
@@ -223,10 +232,12 @@ if [[ -n "${HEX_LOCAL:-}" ]]; then
   # below sources it in a fresh `bash -c` that has no `set -u`, so it's only an
   # issue on this in-process path).
   set +u
-  if [[ -f /space/lib/vulkan-sdk/setup-env.sh ]]; then
-    source /space/lib/vulkan-sdk/setup-env.sh >/dev/null 2>&1 || true
-  elif [[ -f /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh ]]; then
-    source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh >/dev/null 2>&1 || true
+  if [[ "$HEX_VARIANT" == cuda && "$HEX_RENDERER_SEL" == vulkan ]]; then
+    if [[ -f /space/lib/vulkan-sdk/setup-env.sh ]]; then
+      source /space/lib/vulkan-sdk/setup-env.sh >/dev/null 2>&1 || true
+    elif [[ -f /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh ]]; then
+      source /space/lib/vulkan-sdk-1.3.268.0/setup-env.sh >/dev/null 2>&1 || true
+    fi
   fi
   set -u
   # setup-env.sh prefers VK_ADD_LAYER_PATH, but Ubuntu 22.04's older Vulkan
@@ -235,28 +246,28 @@ if [[ -n "${HEX_LOCAL:-}" ]]; then
   # Guard on VULKAN_SDK: the slim/runtime image ships no Vulkan SDK (it uses
   # lavapipe and needs no validation layer), so setup-env.sh is absent and
   # VULKAN_SDK stays unset — referencing it unguarded would abort under `set -u`.
-  if [[ -n "${VULKAN_SDK:-}" ]]; then
+  if [[ "$HEX_RENDERER_SEL" == vulkan && -n "${VULKAN_SDK:-}" ]]; then
     export VK_LAYER_PATH="${VULKAN_SDK}/share/vulkan/explicit_layer.d"
   fi
   hexmesh_check_binary_variant /space/interactive-hex-meshing/bin/Release || exit 1
   ( cd /space/interactive-hex-meshing/bin/Release \
-      && ./hex --script "$CONTAINER_CONFIG" $EXIT_AFTER $HEADLESS $DEVICE_FLAG ) 2>&1 | tee "$LOG_FILE"
+      && ./hex --script "$CONTAINER_CONFIG" $EXIT_AFTER $HEADLESS $NO_VULKAN $DEVICE_FLAG ) 2>&1 | tee "$LOG_FILE"
   STATUS=${PIPESTATUS[0]}
 else
   # GPU passthrough and Vulkan ICD selection come from the shared helper, so the
   # CPU variant cannot acquire a stray --gpus / --runtime=nvidia / NVIDIA ICD.
   hexmesh_runtime_docker_args
 
-  if [[ "$HEX_VARIANT" == cpu ]]; then
-    RUN_IMAGE="${HEX_RUN_IMAGE:-hexmesh-cpu:latest}"
-    # The CPU image is self-contained: its +cpu LibTorch, the hex binary and the
-    # assets are baked in. Mounting the host lib/ or interactive-hex-meshing/
-    # here would shadow them with whatever variant the host happens to hold —
-    # typically a CUDA LibTorch, which a CPU binary cannot load.
+  if [[ "$HEX_VARIANT:$HEX_RENDERER_SEL" != cuda:vulkan ]]; then
+    RUN_IMAGE="${HEX_RUN_IMAGE:-$(hexmesh_image pipeline)}"
+    # CPU and renderer-free images are self-contained: their matching LibTorch,
+    # binary and assets are baked in. Mounting host lib/ or source over them can
+    # silently replace the selected variant with whichever build ran last.
     RUN_MOUNTS=(-v "$REPO_ROOT/output:/space/output")
     RUN_PREFIX=""
   else
-    RUN_IMAGE="${HEX_RUN_IMAGE:-docker-hexmesh}"
+    # Preserve the historical CUDA+Vulkan development-image workflow.
+    RUN_IMAGE="${HEX_RUN_IMAGE:-$(hexmesh_image pipeline)}"
     RUN_MOUNTS=(
       -v "$REPO_ROOT/lib:/space/lib"
       -v "$REPO_ROOT/evocube:/space/evocube"
@@ -280,7 +291,7 @@ else
     "${RUN_MOUNTS[@]}" \
     "$RUN_IMAGE" \
     bash -c "${RUN_PREFIX}cd /space/interactive-hex-meshing/bin/Release \
-             && ./hex --script ${CONTAINER_CONFIG} ${EXIT_AFTER} ${HEADLESS} ${DEVICE_FLAG}" \
+             && ./hex --script ${CONTAINER_CONFIG} ${EXIT_AFTER} ${HEADLESS} ${NO_VULKAN} ${DEVICE_FLAG}" \
     2>&1 | tee "$LOG_FILE"
   STATUS=${PIPESTATUS[0]}
 fi

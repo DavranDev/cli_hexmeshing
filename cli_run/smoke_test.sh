@@ -12,6 +12,7 @@
 #
 # The default is true headless, so no X11 display or authorization is needed.
 # Set SMOKE_GUI=1 only when intentionally testing the GUI/--exit-after path.
+# Set SMOKE_NO_VULKAN=1 to additionally drop every Vulkan call (no ICD needed).
 # Exits 0 and prints PASS if the pipeline produces a valid (non-inverted) hex
 # mesh; exits 1 and prints FAIL otherwise.
 # Stop at the first failed stage. Without `-e`, a failure inside one of the
@@ -40,6 +41,17 @@ fi
 if [[ -n "${SMOKE_DEVICE:-}" ]]; then
   RUN_FLAGS+=(--device "$SMOKE_DEVICE")
   echo "=== smoke test: compute device = $SMOKE_DEVICE ===" >&2
+fi
+
+# Renderer: set SMOKE_NO_VULKAN=1 to run with no Vulkan instance/device/view at
+# all. Mutually exclusive with SMOKE_GUI, which needs the renderer it disables.
+if [[ "${SMOKE_NO_VULKAN:-0}" == "1" ]]; then
+  if [[ "${SMOKE_GUI:-0}" == "1" ]]; then
+    echo "FAIL: SMOKE_GUI=1 and SMOKE_NO_VULKAN=1 are contradictory (a GUI needs Vulkan)." >&2
+    exit 1
+  fi
+  RUN_FLAGS+=(--no-vulkan)
+  echo "=== smoke test: --no-vulkan (no Vulkan instance, device or view) ===" >&2
 fi
 
 if [[ ! -f "$INPUT" ]]; then

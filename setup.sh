@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One-command NVIDIA setup: install host-side libraries, build the Docker image,
-# compile the project inside Docker, and run a headless NVIDIA smoke test.
+# One-command setup for the CPU/CUDA x Vulkan/none build matrix: install the
+# selected host-side libraries, build its Docker images, compile, and smoke test.
 #
 # This script deliberately downloads the current official LunarG SDK instead of
 # depending on a checked-in Vulkan tarball. The extracted SDK is normalized to
@@ -10,6 +10,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
+# shellcheck source=cli_run/lib/docker_args.sh
+source "$ROOT/cli_run/lib/docker_args.sh"
 
 VULKAN_SDK_URL="${VULKAN_SDK_URL:-https://sdk.lunarg.com/sdk/download/latest/linux/vulkan-sdk.tar.xz}"
 RUN_SMOKE="${RUN_SMOKE:-1}"
@@ -21,6 +23,9 @@ CLEAN_CONTAINERS=0
 # Toolkit, no LunarG Vulkan SDK. Distinct from `hex --device cpu`, which is a
 # runtime device choice a CUDA-enabled build also supports.
 HEX_CPU_ONLY="${HEX_CPU_ONLY:-0}"
+# Renderer-free build (-DHEX_ENABLE_VULKAN=OFF). Composable with --cpu; the
+# two flags are the four-variant matrix.
+HEX_NO_VULKAN="${HEX_NO_VULKAN:-0}"
 
 # LibTorch identity. These are the same constants Dockerfile.cpu takes as build
 # arguments; the two consumers must not drift, so both record them in
@@ -30,9 +35,16 @@ LIBTORCH_ABI="${LIBTORCH_ABI:-cxx11}"
 
 usage() {
   cat <<'EOF'
-Usage: ./setup.sh [--cpu] [--clean-containers] [--no-smoke] [--self-contained]
+Usage: ./setup.sh [--cpu] [--no-vulkan] [--clean-containers] [--no-smoke]
+                  [--self-contained]
 
-One-command setup. Two variants:
+One-command setup. Four variants -- --cpu and --no-vulkan are orthogonal:
+
+  ./setup.sh                    CUDA + Vulkan   (GUI; the default, unchanged)
+  ./setup.sh --cpu              CPU  + Vulkan
+  ./setup.sh --no-vulkan        CUDA, headless-only, no Vulkan packages
+  ./setup.sh --cpu --no-vulkan  CPU,  headless-only, no Vulkan packages
+
 
   ./setup.sh          CUDA + Vulkan renderer (needs an NVIDIA GPU + driver)
     1. downloads the cu124 LibTorch + current LunarG Vulkan SDK if missing
@@ -49,16 +61,25 @@ One-command setup. Two variants:
     4. runs no-crash checks
     5. runs the headless CPU smoke test (SMOKE_DEVICE=cpu, no --gpus)
 
+  Adding --no-vulkan to either of the above runs the same steps minus every
+  Vulkan one: no SDK download, no host vulkan-tools, -DHEX_ENABLE_VULKAN=OFF,
+  and a binary that links no Vulkan/imgui/glfw. Its build directory is
+  build/<cuda|cpu>-novk-release and the binary is labelled renderer=none.
+
 Options:
   --cpu               CPU-only build: link no CUDA at all. amd64 only.
+  --no-vulkan         Renderer-free build: link no Vulkan, imgui or glfw at
+                      all, and install no Vulkan SDK, loader, driver or
+                      vulkan-tools. The binary is headless-only and requires
+                      --script. Composable with --cpu.
   --clean-containers  Remove all existing Docker containers before building.
   --no-smoke          Skip the final smoke test.
   --no-nvidia-fix     Do not auto-install/configure the NVIDIA Container
                       Toolkit; only check it and error out if it is missing.
                       Ignored with --cpu, which never touches the toolkit.
   --self-contained    Also build hexmesh-cli:latest from Dockerfile.build.
-                      Ignored with --cpu (Dockerfile.cpu is already
-                      self-contained).
+                      Ignored with --cpu or --no-vulkan because those selected
+                      images are already self-contained.
   -h, --help          Show this help.
 
 LibTorch variants:
@@ -78,6 +99,7 @@ Environment overrides:
                            selected variant; setup.sh validates the archive.
   VULKAN_SDK_URL=...       Override the LunarG Vulkan SDK download URL.
   HEX_CPU_ONLY=1          Same as --cpu.
+  HEX_NO_VULKAN=1         Same as --no-vulkan.
   RUN_SMOKE=0             Same as --no-smoke.
   NVIDIA_FIX=0            Same as --no-nvidia-fix.
   BUILD_SELF_CONTAINED=1  Same as --self-contained.
@@ -87,6 +109,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cpu) HEX_CPU_ONLY=1; shift ;;
+    --no-vulkan) HEX_NO_VULKAN=1; shift ;;
     --clean-containers) CLEAN_CONTAINERS=1; shift ;;
     --no-smoke) RUN_SMOKE=0; shift ;;
     --no-nvidia-fix) NVIDIA_FIX=0; shift ;;
@@ -99,6 +122,20 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Translate setup's build flags to the same selectors used by every launcher.
+# Keep these assignments local to this setup process; built images also record
+# the pair in their ENV and the compiled binary marker records it independently.
+if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+  HEX_IMAGE_VARIANT=cpu
+else
+  HEX_IMAGE_VARIANT=cuda
+fi
+if [[ "$HEX_NO_VULKAN" == 1 ]]; then
+  HEX_RENDERER=none
+else
+  HEX_RENDERER=vulkan
+fi
 
 # Resolved after parsing, so --cpu can select the archive.
 if [[ "$HEX_CPU_ONLY" == 1 ]]; then
@@ -162,6 +199,13 @@ install_setup_tools() {
 }
 
 install_host_vulkan_tools() {
+  # A renderer-free install has nothing to diagnose: no binary in this variant
+  # can talk to a Vulkan driver.
+  if [[ "$HEX_NO_VULKAN" == 1 ]]; then
+    echo "==> Skipping host Vulkan tools (--no-vulkan build)"
+    return 0
+  fi
+
   # Host-side NVIDIA/Vulkan diagnostics are not part of the CPU-only path; the
   # CPU images carry their own vulkan-tools for the checks that matter there.
   if [[ "$HEX_CPU_ONLY" == 1 ]]; then
@@ -311,20 +355,48 @@ install_libtorch() {
   echo "==> LibTorch installed: variant=$want version=$LIBTORCH_VERSION abi=$LIBTORCH_ABI"
 }
 
+# True only if <dir> is a complete, usable SDK: env script, loader tree, and
+# the validation layer (library + manifest). Applied to a pre-existing
+# lib/vulkan-sdk and to a fresh extraction alike, so a half-extracted or
+# corrupted tree can never satisfy the "already installed" check — it gets
+# re-downloaded instead of failing later inside the compile.
+validate_vulkan_sdk_tree() {
+  local dir="$1"
+  VULKAN_SDK_INVALID_REASON=""
+  if   [[ ! -f "$dir/setup-env.sh" ]]; then VULKAN_SDK_INVALID_REASON="missing setup-env.sh"
+  elif [[ ! -d "$dir/x86_64" ]]; then VULKAN_SDK_INVALID_REASON="missing the x86_64/ tree"
+  elif [[ ! -f "$dir/x86_64/lib/libVkLayer_khronos_validation.so" ]]; then
+    VULKAN_SDK_INVALID_REASON="missing the validation layer library"
+  elif ! find "$dir/x86_64/share/vulkan/explicit_layer.d" \
+         -name '*khronos_validation*.json' -print -quit 2>/dev/null | grep -q .; then
+    VULKAN_SDK_INVALID_REASON="missing the validation layer manifest"
+  fi
+  [[ -z "$VULKAN_SDK_INVALID_REASON" ]]
+}
+
 install_vulkan_sdk() {
   # A CPU-only install takes Vulkan from the distro (libvulkan-dev +
   # mesa-vulkan-drivers, inside Dockerfile.cpu). The ~1.5 GB LunarG SDK only
   # supplied the loader, headers and validation layers, and
   # vkoo/src/core/Instance.cpp already falls back cleanly with no validation
   # layer present.
+  if [[ "$HEX_NO_VULKAN" == 1 ]]; then
+    echo "==> Skipping the LunarG Vulkan SDK (--no-vulkan build links no Vulkan)"
+    unset VULKAN_SDK VULKAN_SDK_ROOT VK_LAYER_PATH VK_ADD_LAYER_PATH VK_ICD_FILENAMES
+    return
+  fi
+
   if [[ "$HEX_CPU_ONLY" == 1 ]]; then
     echo "==> Skipping the LunarG Vulkan SDK (CPU-only build uses the distro loader)"
     return
   fi
 
-  if [[ -f lib/vulkan-sdk/setup-env.sh && -d lib/vulkan-sdk/x86_64 ]]; then
-    echo "==> Vulkan SDK already installed at lib/vulkan-sdk"
-    return
+  if [[ -d lib/vulkan-sdk ]]; then
+    if validate_vulkan_sdk_tree lib/vulkan-sdk; then
+      echo "==> Vulkan SDK already installed at lib/vulkan-sdk"
+      return
+    fi
+    echo "==> lib/vulkan-sdk is incomplete ($VULKAN_SDK_INVALID_REASON); re-downloading"
   fi
 
   local archive extract_dir top_dir
@@ -347,34 +419,40 @@ install_vulkan_sdk() {
   rm -f "$archive"
   rm -rf "$extract_dir"
 
-  test -f lib/vulkan-sdk/setup-env.sh \
-    || { echo "ERROR: Vulkan SDK extraction did not create setup-env.sh" >&2; exit 1; }
-  test -f lib/vulkan-sdk/x86_64/lib/libVkLayer_khronos_validation.so \
-    || { echo "ERROR: Vulkan validation layer library is missing" >&2; exit 1; }
-  find lib/vulkan-sdk/x86_64/share/vulkan/explicit_layer.d \
-      -name '*khronos_validation*.json' -print -quit | grep -q . \
-    || { echo "ERROR: Vulkan validation layer manifest is missing" >&2; exit 1; }
-
+  validate_vulkan_sdk_tree lib/vulkan-sdk \
+    || { echo "ERROR: extracted Vulkan SDK is incomplete: $VULKAN_SDK_INVALID_REASON" >&2; exit 1; }
 }
 
 # The image the compile + checks run in, per variant.
 build_image_name() {
-  if [[ "$HEX_CPU_ONLY" == 1 ]]; then printf 'hexmesh-cpu:build'; else printf 'docker-hexmesh'; fi
+  hexmesh_image build
 }
 
 build_env_image() {
-  if [[ "$HEX_CPU_ONLY" == 1 ]]; then
-    # Dockerfile.cpu compiles inside its build stage, so this also produces a
-    # ready-to-run image; the runtime target then strips it to binaries + libs.
-    echo "==> Building hexmesh-cpu:build (CPU-only build environment)"
-    "${docker_cmd[@]}" build -f Dockerfile.cpu --target build -t hexmesh-cpu:build .
-    echo "==> Building hexmesh-cpu:latest (slim CPU runtime)"
-    "${docker_cmd[@]}" build -f Dockerfile.cpu --target runtime -t hexmesh-cpu:latest .
-    return
-  fi
-
-  echo "==> Building docker-hexmesh environment image"
-  "${docker_cmd[@]}" build -t docker-hexmesh .
+  case "$HEX_IMAGE_VARIANT:$HEX_RENDERER" in
+    cpu:vulkan)
+      echo "==> Building hexmesh-cpu:build (CPU + Vulkan build environment)"
+      "${docker_cmd[@]}" build -f Dockerfile.cpu --target build -t hexmesh-cpu:build .
+      echo "==> Building hexmesh-cpu:latest (slim CPU + Vulkan runtime)"
+      "${docker_cmd[@]}" build -f Dockerfile.cpu --target runtime -t hexmesh-cpu:latest .
+      ;;
+    cpu:none)
+      echo "==> Building hexmesh-novk:build (CPU, renderer-free build environment)"
+      "${docker_cmd[@]}" build -f Dockerfile.novk --target build -t hexmesh-novk:build .
+      echo "==> Building hexmesh-novk:latest (slim CPU, renderer-free runtime)"
+      "${docker_cmd[@]}" build -f Dockerfile.novk --target runtime -t hexmesh-novk:latest .
+      ;;
+    cuda:vulkan)
+      echo "==> Building docker-hexmesh environment image"
+      "${docker_cmd[@]}" build -t docker-hexmesh .
+      ;;
+    cuda:none)
+      echo "==> Building hexmesh-cuda-novk:build (CUDA, renderer-free build environment)"
+      "${docker_cmd[@]}" build -f Dockerfile.cuda-novk --target build -t hexmesh-cuda-novk:build .
+      echo "==> Building hexmesh-cuda-novk:latest (slim CUDA, renderer-free runtime)"
+      "${docker_cmd[@]}" build -f Dockerfile.cuda-novk --target runtime -t hexmesh-cuda-novk:latest .
+      ;;
+  esac
 }
 
 compile_in_docker() {
@@ -383,6 +461,10 @@ compile_in_docker() {
   if [[ "$HEX_CPU_ONLY" == 1 ]]; then
     # compile.sh reads this to skip the LunarG SDK and pass -DHEX_ENABLE_CUDA=OFF.
     env_args=(-e HEX_CPU_ONLY=1)
+  fi
+  if [[ "$HEX_NO_VULKAN" == 1 ]]; then
+    # ... and this to pass -DHEX_ENABLE_VULKAN=OFF and skip the SDK entirely.
+    env_args+=(-e HEX_NO_VULKAN=1)
   fi
 
   echo "==> Compiling evocube + hex inside $image"
@@ -397,12 +479,12 @@ compile_in_docker() {
 }
 
 build_self_contained_image() {
-  # Dockerfile.cpu is already self-contained, and Dockerfile.build is the CUDA
-  # image — building it here would pull in the whole CUDA stack this variant
-  # exists to avoid.
-  if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+  # Every CPU image and both renderer-free images are already self-contained.
+  # Only the historical CUDA+Vulkan environment has an optional separate
+  # self-contained image.
+  if [[ "$HEX_CPU_ONLY" == 1 || "$HEX_NO_VULKAN" == 1 ]]; then
     [[ "$BUILD_SELF_CONTAINED" == "1" ]] \
-      && echo "==> Ignoring --self-contained: hexmesh-cpu:latest is already self-contained"
+      && echo "==> Ignoring --self-contained: $(hexmesh_image pipeline) is already self-contained"
     return 0
   fi
   [[ "$BUILD_SELF_CONTAINED" == "1" ]] || return 0
@@ -502,11 +584,7 @@ run_checks() {
   # needs an image with bash + patch. Run it in whichever one this variant built.
   local image ld_path
   image="$(build_image_name)"
-  if [[ "$HEX_CPU_ONLY" == 1 ]]; then
-    ld_path="/space/lib/libtorch/lib"
-  else
-    ld_path="/space/lib/libtorch/lib:/space/lib/vulkan-sdk/x86_64/lib:/space/lib/vulkan-sdk/x86_64/lib/VulkanLoader/lib"
-  fi
+  ld_path="$(hexmesh_ld_library_path /space)"
 
   echo "==> Running no-crash source/binary checks"
   "${docker_cmd[@]}" run --rm \
@@ -518,16 +596,23 @@ run_checks() {
 }
 
 run_cpu_smoke() {
-  echo "==> Running headless CPU smoke test (no GPU, no --gpus, no NVIDIA ICD)"
+  local image smoke_env=()
+  image="$(hexmesh_image pipeline)"
+  if [[ "$HEX_RENDERER" == none ]]; then
+    smoke_env=(-e SMOKE_NO_VULKAN=1)
+  fi
+
+  echo "==> Running headless CPU smoke test with $image (no GPU, no --gpus, no NVIDIA ICD)"
   # Deliberately minimal: the CPU runtime image is self-contained, so only
   # output/ is mounted. Mounting lib/ or the source tree would shadow the
   # image's +cpu LibTorch and its CUDA-free binary.
   "${docker_cmd[@]}" run --rm \
     -e HEX_LOCAL=1 \
     -e SMOKE_DEVICE=cpu \
+    "${smoke_env[@]}" \
     -v "$ROOT/output:/space/output" \
     -w /space \
-    hexmesh-cpu:latest \
+    "$image" \
     ./cli_run/smoke_test.sh
 }
 
@@ -540,6 +625,23 @@ run_nvidia_smoke() {
   fi
 
   ensure_nvidia_runtime
+
+  if [[ "$HEX_RENDERER" == none ]]; then
+    local image
+    image="$(hexmesh_image pipeline)"
+    hexmesh_runtime_docker_args
+    echo "==> Running renderer-free NVIDIA smoke test with $image"
+    "${docker_cmd[@]}" run --rm \
+      "${HEXMESH_DOCKER_ARGS[@]}" \
+      -e HEX_LOCAL=1 \
+      -e SMOKE_DEVICE=cuda \
+      -e SMOKE_NO_VULKAN=1 \
+      -v "$ROOT/output:/space/output" \
+      -w /space \
+      "$image" \
+      ./cli_run/smoke_test.sh
+    return
+  fi
 
   echo "==> Running headless NVIDIA smoke test"
   "${docker_cmd[@]}" run --rm \
@@ -577,9 +679,15 @@ run_checks
 run_nvidia_smoke
 install_host_vulkan_tools
 
-if [[ "$HEX_CPU_ONLY" == 1 ]]; then
+if [[ "$HEX_CPU_ONLY" == 1 && "$HEX_NO_VULKAN" == 1 ]]; then
+  echo "OK: CPU-only, renderer-free setup, compile, and verification complete."
+  echo "    Run the pipeline with: HEX_IMAGE_VARIANT=cpu HEX_RENDERER=none ./cli_run/run.sh <stage> <input> --no-vulkan --device cpu"
+elif [[ "$HEX_CPU_ONLY" == 1 ]]; then
   echo "OK: CPU-only setup, compile, and verification complete (no CUDA installed or linked)."
   echo "    Run the pipeline with: HEX_IMAGE_VARIANT=cpu ./cli_run/run.sh <stage> <input> --headless --device cpu"
+elif [[ "$HEX_NO_VULKAN" == 1 ]]; then
+  echo "OK: CUDA, renderer-free setup, compile, and verification complete."
+  echo "    Run the pipeline with: HEX_RENDERER=none ./cli_run/run.sh <stage> <input> --no-vulkan --device cuda"
 else
   echo "OK: NVIDIA setup, compile, and verification complete."
 fi

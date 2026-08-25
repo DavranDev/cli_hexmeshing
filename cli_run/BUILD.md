@@ -29,6 +29,76 @@ downloads them. They are gitignored along with `lib/` and the build output.
 
 ---
 
+## 0.1 The four build variants
+
+Two orthogonal CMake options give four builds. The default is unchanged; every
+other variant removes something and is verified to have removed it.
+
+| Command | `HEX_ENABLE_CUDA` | `HEX_ENABLE_VULKAN` | GPU needed | Vulkan ICD needed | GUI |
+|---|---|---|---|---|---|
+| `./setup.sh` | ON | ON | yes | yes | yes |
+| `./setup.sh --cpu` | OFF | ON | no | yes (lavapipe) | yes |
+| `./setup.sh --no-vulkan` | ON | OFF | yes | **no** | no |
+| `./setup.sh --cpu --no-vulkan` | OFF | OFF | no | **no** | no |
+
+What each option actually removes:
+
+- **`--cpu`** — links no CUDA at all: no toolkit, no CUDA LibTorch, no
+  CUDA-linked objects. See [CPU_ONLY.md](CPU_ONLY.md). Independent of
+  `hex --device cpu`, which a CUDA build also honours.
+- **`--no-vulkan`** — compiles and links no Vulkan, imgui, glfw, glslang, SPIRV
+  or spirv-cross, and installs no Vulkan SDK, loader, driver or `vulkan-tools`.
+  The binary is headless-only and requires `--script`; `--headless` and
+  `--no-vulkan` are still accepted as no-ops. See
+  [HEADLESS.md](HEADLESS.md) §0.3.
+
+There is also a **runtime** flag, `hex --no-vulkan`, which a Vulkan-enabled
+binary honours: it creates no Vulkan object and needs no ICD, but still links
+the loader. That is HEADLESS.md §0.2 (LEVEL 2); the build variant above is
+LEVEL 3.
+
+### Docker images per variant
+
+| Variant | Dockerfile | Image |
+|---|---|---|
+| CUDA + Vulkan | `Dockerfile` / `Dockerfile.build` | `docker-hexmesh`, `hexmesh-cli:latest` |
+| CPU + Vulkan | `Dockerfile.cpu` | `hexmesh-cpu:build`, `hexmesh-cpu:latest` |
+| CPU + no Vulkan | `Dockerfile.novk` | `hexmesh-novk:build`, `hexmesh-novk:latest` |
+| CUDA + no Vulkan | `Dockerfile.cuda-novk` | `hexmesh-cuda-novk:build`, `hexmesh-cuda-novk:latest` |
+
+The CUDA + no-Vulkan variant can also be built without its image, inside the
+normal CUDA environment:
+
+```bash
+docker run --rm -e HEX_NO_VULKAN=1 \
+  -v "$PWD/lib:/space/lib" -v "$PWD/evocube:/space/evocube" \
+  -v "$PWD/interactive-hex-meshing:/space/interactive-hex-meshing" \
+  -v "$PWD/compile.sh:/space/compile.sh:ro" -v "$PWD/patches:/space/patches:ro" \
+  docker-hexmesh bash /space/compile.sh
+```
+
+That is the path this variant was verified through: it builds into
+`build/cuda-novk-release`, labels the binary `renderer=none`, and runs the full
+four-stage chain on the GPU with `NVIDIA_DRIVER_CAPABILITIES=compute,utility` —
+CUDA compute, no graphics capability, no ICD mount.
+
+### One binary path, one marker
+
+All four variants write `interactive-hex-meshing/bin/Release/hex`, so the last
+build wins. `bin/Release/.hexmesh-variant` records both dimensions —
+
+```
+variant=cuda
+renderer=none
+```
+
+— and is written **only after the freshly built binary's own `--help` is checked
+against what was requested**. `cli_run/run.sh`, `./hex` and `run_docker.sh` read
+it and refuse a mismatched launch. Select the expected variant with
+`HEX_IMAGE_VARIANT=cpu|cuda` and `HEX_RENDERER=vulkan|none`.
+
+---
+
 ## A. Docker build (recommended)
 
 ### A.1 Host prerequisites

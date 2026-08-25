@@ -17,6 +17,8 @@ the weeks:
 | W1 — CLI runner | +590 / −4 / 18 files | new `hex/src/cli/` + thin `RunFromScript()` shims (table below) |
 | W3 — `--headless` | +682 / −33 / 21 files | surfaceless-Vulkan `if (!headless)` startup guards in `main.cpp`, `HexMeshingApp`, `vkoo/Application` |
 | W3 — CPU-only | **+967 / −121 / 32 files** | the `--device cpu\|cuda` knob (`.cuda()`→`.to(ComputeDevice())` across 5 files + `torch_utils`), and CPU branches in the two geomlib `.cu` kernels (`point_tet_mesh_test`, `generalized_projection`) that **reuse the identical per-element math** — see [CPU_ONLY.md](CPU_ONLY.md) §5 |
+| Phase A — `--no-vulkan` | **+375 / −214 / 16 files** | `DisplayMode` replaces `Prepare(bool)`; visibility bitmask moved out of `GlobalView` into `GlobalController`; `UnfocusCuboid`'s optimizer-thread join split out; views/`CuboidEditingController` no longer constructed without a device — see [the main no-Vulkan plan](../plans/no-vulkan-headless.md), Step A3 |
+| Phase B — `HEX_ENABLE_VULKAN=OFF` | **+2723 / −1933 / 42 files** | GUI translation-unit split (`<Stage>Gui.cpp`, `GlobalControllerGui.cpp`); new `HeadlessSession` owner; `PipelineScriptRunner` takes `GlobalController&`; `vkoo/common.h` Vulkan block guarded; per-variant source lists in `vkoo`/`hex`/`external` CMake. Most deletions are code *moved* into the 9 new files, not removed. |
 | W4 — GUI synchronization | **+1003 / −133 / 34 files** | replace unsafe acquire-semaphore recycling with a host-waited Vulkan acquire fence in `vkoo/RenderContext`; fixes the indefinite GUI render loop under current validation layers |
 
 The additions remain focused on CLI/device selection and Vulkan lifecycle code.

@@ -1,10 +1,13 @@
 # Headless mode — design + implementation
 
-> **STATUS (Week 3, T1): IMPLEMENTED.** `--headless` is now a real flag.
-> Sections 1–7 below are the original Week-2 feasibility trace that scoped the
-> work (kept verbatim as the design rationale); **§0 records what was actually
-> built and verified in Week 3.** The Week-2 line "no source was changed" applied
-> to the memo only and is superseded by §0.
+> **STATUS (2026-08-13): LEVEL 1, LEVEL 2 and LEVEL 3 are all implemented.**
+> §0 records LEVEL 1 (`--headless`, surfaceless Vulkan, Week 3).
+> **§0.2 records LEVEL 2 (`--no-vulkan`) and §0.3 records LEVEL 3
+> (`-DHEX_ENABLE_VULKAN=OFF`)**, both from
+> [plans/no-vulkan-headless.md](../plans/no-vulkan-headless.md).
+> Sections 1–7 are the original Week-2 feasibility trace, kept verbatim as
+> design rationale. Where §6 estimates the cost of "design A", see §0.2 —
+> the measured scope was much larger than that estimate.
 
 **Question the memo answered:** what stands between today's `--exit-after` *GUI
 automation* (the window opens, the script runs, the window closes) and a true
@@ -27,10 +30,13 @@ runs the scripted pipeline, writes output, and exits. (Contrast `--exit-after`,
 which still *opens* a window and then closes it.)
 
 `LEVEL 2` (drop the Vulkan device entirely — the memo's "design A") was **not**
-taken: `GlobalController` holds a `vkoo::Device&` by reference and `GlobalView`
-eagerly builds Vulkan sub-views at construction, so removing the device means
-rewriting the controller/view classes (~1–1.5 wk) — that is the CPU-only work
-(Week-3 T3), not this flag.
+taken *at the time*, and the reason given was right: `GlobalController` held a
+`vkoo::Device&` by reference and `GlobalView` eagerly built Vulkan sub-views at
+construction, so removing the device meant rewriting the controller/view
+classes. **That rewrite has since been done — see §0.2.** The ~1–1.5 wk estimate
+was for the device removal alone; the full LEVEL 2 + LEVEL 3 work took
+substantially more, because the coupling was through *reads* (a thread join and
+a visibility bitmask living inside a view), not just through construction.
 
 ### The change is additive and confined to startup (5 files, ~1 stage untouched)
 | File | Change |
@@ -106,6 +112,113 @@ the GUI result. (Per-stage GPU evidence for the same run is in
 # via the wrapper (forwards --headless):
 HEX_LOCAL=1 ./cli_run/run.sh deform input.mesh --headless
 ```
+
+---
+
+## 0.2 LEVEL 2 — `hex --no-vulkan` (runtime flag)
+
+**What it is:** the same binary, told at run time to create no Vulkan object at
+all. No `Instance`, no physical-device enumeration, no `Device`, no
+`RenderContext`, no sampler, and no view.
+
+**What it removes:** the need for a Vulkan ICD, a graphics driver, lavapipe,
+validation layers and `VK_ICD_FILENAMES`.
+
+**What it does NOT remove:** the binary still *links* `libvulkan.so.1`, because
+`find_package(Vulkan REQUIRED)` and `Vulkan::Vulkan` are still in the build. A
+container needs `libvulkan1` present or the process fails before `main()`.
+Removing that is LEVEL 3.
+
+```bash
+hex --script run.yaml --no-vulkan            # implies --headless
+./cli_run/run.sh deform in.mesh --no-vulkan
+SMOKE_NO_VULKAN=1 ./cli_run/smoke_test.sh
+```
+
+### Why it needed a refactor rather than a flag
+
+Two things had to move before the view could simply be absent:
+
+1. **`DecompositionStage::UnfocusCuboid()` opened with an optimizer-thread
+   join**, and four of its nine callers are on the script path. Skipping the
+   function to skip its view work would have raced the optimizer. The join is
+   now `JoinOptimizerThread()` and always runs.
+2. **The visibility bitmask was non-visual state living inside `GlobalView`.**
+   It moved to `GlobalController`; `GlobalView` only consumes it now.
+
+All view dereferences were classified before the refactor. The audit criteria
+and the load-bearing cases are recorded in
+[the main no-Vulkan plan](../plans/no-vulkan-headless.md), Step A3.
+
+### Proof
+
+`Application::HasAnyVulkanObject()` is asserted **and logged** after `Prepare`,
+so a release run states it:
+
+```
+No-Vulkan mode: skipped sampler, render pipelines, GUI and every view;
+vulkan_objects_created=false
+```
+
+In a container with the loader installed but no ICD and no driver
+(`vulkaninfo` → `ERROR_INCOMPATIBLE_DRIVER`), `--no-vulkan` completes all four
+stages while `--headless` on the same config fails. That contrast is the proof.
+
+---
+
+## 0.3 LEVEL 3 — `-DHEX_ENABLE_VULKAN=OFF` (build variant)
+
+**What it is:** the renderer is not compiled or linked. `vkoo` builds 17 source
+files (the scene graph plus two Vulkan-free odds and ends) instead of the full
+tree, and links **`glm spdlog`** and nothing else.
+
+**What it removes:** everything LEVEL 2 removes, **plus** `libvulkan-dev`,
+`libvulkan1`, imgui, glfw, glslang, SPIRV, spirv-cross, stb, and the GL/X11
+packages that existed only for glfw.
+
+```bash
+./setup.sh --no-vulkan              # CUDA + headless-only
+./setup.sh --cpu --no-vulkan        # CPU  + headless-only
+docker build -f Dockerfile.novk --target runtime -t hexmesh-novk:latest .
+```
+
+`--headless` and `--no-vulkan` are still **accepted** by an OFF binary, as
+idempotent no-ops, so existing command lines and scripts keep working.
+`--script` becomes mandatory: there is no GUI to open.
+
+### How the split works
+
+`InputEvent.h` turned out to have no includes at all — no GLFW, no Vulkan — so
+**no stage header needed conditioning** and every
+`HandleInputEvent(const vkoo::InputEvent&)` signature survives verbatim. The
+split is therefore `.cpp`-level:
+
+| Kept in every build | Compiled only when ON |
+|---|---|
+| `<Stage>.cpp` — `RunFromScript` and all non-visual methods | `<Stage>Gui.cpp` — `DrawStageWindow` / `HandleInputEvent` / `Update` |
+| `GlobalController.cpp` | `GlobalControllerGui.cpp` |
+| `HeadlessSession.{h,cpp}` — the non-rendering owner | `HexMeshingApp.{h,cpp}`, `views/*`, `CuboidEditingController`, `ImGuiEx` |
+
+`PipelineScriptRunner` now takes `GlobalController&` rather than
+`HexMeshingApp&`, and `GlobalController` takes `Settings&`, `vkoo::Device*` and
+`vkoo::st::Scene&` as constructor data instead of holding the application. The
+renderer-free dependency-closure analysis is recorded in
+[the main no-Vulkan plan](../plans/no-vulkan-headless.md), Step B1.
+
+### The four variants
+
+| Command | CUDA | Vulkan | GUI |
+|---|---|---|---|
+| `./setup.sh` | ✔ | ✔ | ✔ |
+| `./setup.sh --cpu` | ✘ | ✔ | ✔ |
+| `./setup.sh --no-vulkan` | ✔ | ✘ | ✘ |
+| `./setup.sh --cpu --no-vulkan` | ✘ | ✘ | ✘ |
+
+All four share `bin/Release/hex`, so `bin/Release/.hexmesh-variant` now records
+both `variant=` and `renderer=`, verified against the built binary's `--help`
+rather than against what was requested. The runner scripts refuse a mismatched
+launch.
+
 
 ---
 
@@ -265,6 +378,29 @@ So Xvfb cleanly resolves (V-display); the only thing it still requires is
 | **C** | **`xvfb-run` stopgap** (no code) | docs only | on-screen window / real X server | GPU + Vulkan ICD | **~0.5 day** — available now |
 | **B** | **Surfaceless-Vulkan `--headless`**: skip `PrepareWindow`/`CreateSurface`/swapchain + `SetupRenderPipelines`/`Gui`; create the device without a window surface (or `VK_EXT_headless_surface`) | vkoo `Application::Prepare`, `Device`, `RenderContext`; `HexMeshingApp::Prepare`; a `--headless` flag from `main.cpp` → ctor (**~4-5 startup files; stage + view code untouched**) | window + X11 entirely | GPU + Vulkan device (views still allocate buffers, nothing presents) | **~2-3 days** |
 | **A** | **No-Vulkan CUDA-only**: make `GlobalView` a no-op headless, stop `GlobalController` holding a live `vkoo::Device&` (reference → optional/null device), guard the ~10 (a) view calls + `HexahedralizationStage` ctor + `GlobalView` sub-view construction | `GlobalController`, `GlobalView` (whole class), `HexahedralizationStage` ctor, the ~10 `GetGlobalView()` sites across the 4 stages (**~6-8 files incl. core controllers**) | window + X11 **+ Vulkan** | GPU only via CUDA (no Vulkan) | **~1-1.5 weeks** |
+
+> **CORRECTION (2026-08-13), from having built A.** Row **A**'s estimate was
+> **wrong, and wrong in both directions.** Measured against the delivered work:
+>
+> | | §6 estimate | Measured |
+> |---|---|---|
+> | Files touched | ~6–8 | **42** (33 modified + 9 new), across two phases |
+> | View call sites to guard | "~10 `GetGlobalView()` sites" | **44 dereferences** — 31 `GetGlobalView()`/`GetPolycubeView()` calls outside `views/`, plus 4 inside `GlobalController` and 9 stage-owned views |
+> | Effort | ~1–1.5 weeks | Phase A + Phase B, and Phase B was the larger half |
+>
+> The estimate missed the coupling because it counted *writes* to views. The two
+> things that actually made this hard were **reads**:
+> `DecompositionStage::UnfocusCuboid()` opening with an optimizer-thread join
+> that four script-path callers depend on, and the visibility bitmask being
+> non-visual state that happened to live inside `GlobalView`. Neither is visible
+> in a count of view-update calls.
+>
+> Row A also conflated two outcomes that turned out to be separate deliverables:
+> making no Vulkan *call* (LEVEL 2, §0.2) and linking no Vulkan *at all*
+> (LEVEL 3, §0.3). Only the second removes the packages.
+>
+> Row **B**'s estimate held up: `--headless` landed in ~2–3 days as predicted,
+> and its claim that stage/view code needed no changes was correct **for B**.
 
 Notes:
 - **B is the smallest real `--headless`.** Because no script-path view call is
